@@ -1,0 +1,4 @@
+**/tags
+**/*.o
+src/lrptdec
+**/cachegrind.out*
