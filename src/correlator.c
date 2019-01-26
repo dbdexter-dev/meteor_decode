@@ -118,6 +118,7 @@ correlator_soft_correlate(Correlator *self, int8_t *frame, size_t len)
 
 			/* Fast exit in case correlation is very high */
 			if (tmp_corr > CORRELATION_THR) {
+				self->active_correction = pattern;
 				max_corr_pos = i;
 				goto cleanup;
 			}

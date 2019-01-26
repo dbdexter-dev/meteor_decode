@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #define FRAME_BITS 8192
+#define FRAME_SIZE (FRAME_BITS >> 3)
 #define SOFT_FRAME_SIZE (FRAME_BITS * 2)
 
 #endif

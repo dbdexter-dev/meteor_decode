@@ -1,5 +1,6 @@
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include "correlator.h"
 #include "lrpt.h"
 #include "options.h"
@@ -15,15 +16,15 @@ main(int argc, char *argv[])
 	Source *s;
 	Viterbi *v;
 	Correlator *co;
-	int8_t buf[SOFT_FRAME_SIZE];
-	uint8_t decoded[512];
+	int8_t buf[SOFT_FRAME_SIZE * 2];
+	uint8_t decoded[FRAME_SIZE];
 	int bytes_read;
+	int frame_offset;
 	/* Command-line changeable variables {{{*/
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
 	int (*log) (const char *msg, ...);
 	/*}}}*/
-
 	/* Initialize command-line overridable parameters {{{*/
 	out_fname = NULL;
 	free_fname_on_exit = 0;
@@ -63,17 +64,23 @@ main(int argc, char *argv[])
 
 	s = src_open(in_fname, 8);
 	v = viterbi_init();
-
 	co = correlator_init(SYNC_WORD);
 
-	int i;
-	for (i=0; i<100; i++) {
+	for (int i=0; i<100; i++) {
 		src_read(s, SOFT_FRAME_SIZE, buf);
-		correlator_soft_correlate(co, buf, SOFT_FRAME_SIZE);
-/*		correlator_soft_fix(co, buf, SOFT_FRAME_SIZE);*/
-/*		bytes_read = viterbi_decode(v, buf, SOFT_FRAME_SIZE, decoded);*/
+
+		frame_offset = correlator_soft_correlate(co, buf, SOFT_FRAME_SIZE);
+/*		printf("Frame offset: %d\n", frame_offset);*/
+
+		if (frame_offset) {
+			memmove(buf, buf+frame_offset, SOFT_FRAME_SIZE - frame_offset);
+			src_read(s, frame_offset, buf + SOFT_FRAME_SIZE - frame_offset);
+		}
+
+		correlator_soft_fix(co, buf, SOFT_FRAME_SIZE);
+		bytes_read = viterbi_decode(v, buf, SOFT_FRAME_SIZE, decoded);
 /*		printf("Decoded %d bytes\n", bytes_read);*/
-/*		fwrite(decoded, bytes_read, 1, stdout);*/
+		fwrite(decoded, bytes_read, 1, stdout);
 		fflush(stdout);
 	}
 

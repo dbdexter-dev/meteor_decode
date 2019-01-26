@@ -14,20 +14,6 @@ static int  write_bits(const uint8_t *bits, size_t count, uint8_t *out);
 
 static unsigned int cost(int8_t x, int8_t y, int coding);
 
-static void
-memdump(Path *self)
-{
-	int i;
-	puts("================");
-	printf("(%d)\n", self->id);
-
-	for(i=0; i<self->depth; i++) {
-		printf("%02x ", self->data[i]);
-	}
-	puts("\n");
-
-}
-
 void
 viterbi_deinit(Viterbi *v)
 {
@@ -47,19 +33,18 @@ viterbi_init()
 	Viterbi *ret;
 
 	ret = safealloc(sizeof(*ret));
+	ret->cur_depth = 0;
 
 	for (i=0; i<N_STATES; i++) {
-		ret->mem[i] = safealloc(sizeof(*ret->mem[0]));
+		ret->mem[i] = calloc(1, sizeof(*ret->mem[0]));
 		ret->mem[i]->id = i;
 		ret->mem[i]->cost = 0;
-		ret->mem[i]->depth = 0;
-		memset(ret->mem[i]->data, 0, sizeof(ret->mem[i]->data));
+		ret->mem[i]->data[0] = (i >> 7) & 0x01;
 
-		ret->tmp[i] = safealloc(sizeof(*ret->tmp[0]));
+		ret->tmp[i] = calloc(1, sizeof(*ret->tmp[0]));
 		ret->tmp[i]->id = i;
 		ret->tmp[i]->cost = 0;
-		ret->tmp[i]->depth = 0;
-		memset(ret->tmp[i]->data, 0, sizeof(ret->tmp[i]->data));
+		ret->tmp[i]->data[0] = (i >> 7) & 0x01;
 	}
 
 	/* Compute the transition matrix */
@@ -85,7 +70,8 @@ viterbi_decode(Viterbi *self, const int8_t *in, size_t len, uint8_t *out)
 
 	/* Repeat until $len bytes have been read */
 	while ((int)len > in_pos) {
-		fwd_depth = MIN(MEM_DEPTH-BACKTRACK_DEPTH, len/2);
+/*		printf("Current depth: %d, max depth: %d\n", self->cur_depth, MEM_DEPTH);*/
+		fwd_depth = MIN((size_t)(MEM_DEPTH - self->cur_depth), len/2);
 
 		/* Run the Viterbi algorithm forward */
 		for (i=0; i<(int)fwd_depth; i++) {
@@ -104,33 +90,31 @@ viterbi_decode(Viterbi *self, const int8_t *in, size_t len, uint8_t *out)
 				self->mem[cur_state] = self->tmp[cur_state];
 				self->tmp[cur_state] = tmp;
 			}
+			self->cur_depth++;
 		}
-
 
 		/* Find the best path so far */
 		best = self->mem[0];
 		for (i=1; i<N_STATES; i++) {
-			if (self->mem[i]->cost < best->cost && self->mem[i]->depth > 0) {
+			if (self->mem[i]->cost < best->cost) {
 				best = self->mem[i];
 			}
 		}
 
 		/* Write out depth - BACKTRACK_DEPTH bits */
-		if (best->depth > (int)BACKTRACK_DEPTH) {
-			count = best->depth - BACKTRACK_DEPTH;
-			count = write_bits(best->data, count, out);
-			out += count;
-			bytes_out += count;
+		if (self->cur_depth > (int)BACKTRACK_DEPTH) {
+			count = self->cur_depth - BACKTRACK_DEPTH;
+			i = write_bits(best->data, count, out);
+			out += i;
+			bytes_out += i;
 
 			/* Realign data and normalize the costs */
 			mincost = best->cost;
 			for (i=0; i<N_STATES; i++) {
 				self->mem[i]->cost -= mincost;
-				memmove(&self->mem[i]->data[0], 
-						&self->mem[i]->data[self->mem[i]->depth - BACKTRACK_DEPTH],
-						BACKTRACK_DEPTH);
-				self->mem[i]->depth = BACKTRACK_DEPTH;
+				memmove(self->mem[i]->data, self->mem[i]->data + count, BACKTRACK_DEPTH);
 			}
+			self->cur_depth = BACKTRACK_DEPTH;
 		}
 	}
 
@@ -168,21 +152,19 @@ viterbi_encode(const uint8_t *in, size_t len, uint8_t *out)
 
 /* Static functions {{{*/
 static void
-dump_memory(const Viterbi *self) {
+dump_memory(const Viterbi *self) 
+{
 	int i;
-	Path *ptr;
 
 	printf("===============================\n");
 	for (i=0; i<N_STATES; i++) {
-		printf("%d %d\t", self->mem[i]->id, self->mem[i]->depth);
+		printf("%p ", (void*)self->mem[i]);
+		printf("%p \t", (void*)self->tmp[i]);
 	}
-/*	printf("\nInfo for node %d:\n", 0);*/
-/*	for (ptr = self->mem[0]; ptr != NULL; ptr = ptr->prev) {*/
-/*		printf("%d->\t", ptr->cost);*/
-/*	}*/
 	printf("\n===============================\n");
 	return;
 }
+
 /* Given an end state, find the previous state that gets to it with the least
  * effort */
 static int
@@ -197,10 +179,11 @@ find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state)
 	/* Compute the input necessary to get to end_state */
 	input = end_state->id >> (K-1);
 
+
 	/* Try with candidate #1 */
 	start_state = ((end_state->id << 1) & (N_STATES - 1)) | 0x00;
 	tmpcost = cost(x, y, self->trans[start_state][input].output);
-	if (self->mem[start_state]->cost < MAX_COST) {
+	if (self->mem[start_state]->cost + tmpcost < MAX_COST) {
 		mincost = self->mem[start_state]->cost + tmpcost;
 		prev = start_state;
 	}
@@ -208,19 +191,19 @@ find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state)
 	/* Try with candidate #2 */
 	start_state = ((end_state->id << 1) & (N_STATES - 1)) | 0x01;
 	tmpcost = cost(x, y, self->trans[start_state][input].output);
-	if (self->mem[start_state]->cost < mincost) {
+	if (self->mem[start_state]->cost + tmpcost < mincost) {
 		mincost = self->mem[start_state]->cost + tmpcost;
 		prev = start_state;
 	}
 
-	end_state->cost = mincost;
 	/* If an ancestor was found, copy its data and fix the metadata */
+	/* NOTE: self->cur_depth is a count, not an index. It's index+1 */
 	if (mincost < MAX_COST) {
-		memcpy(end_state->data, self->mem[prev]->data, self->mem[prev]->depth+1);
-		end_state->depth = self->mem[prev]->depth + 1;
-		end_state->data[end_state->depth] = (end_state->id >> (K-1));
+		memcpy(end_state->data, self->mem[prev]->data, self->cur_depth);
+		end_state->data[self->cur_depth] = input;
+		end_state->cost = mincost;
 	} else {
-		end_state->cost = (unsigned int)-1;
+		end_state->cost = (unsigned int) -1;
 	}
 
 	return 0;
@@ -249,9 +232,8 @@ compute_trans(Viterbi *v)
 static unsigned int
 cost(int8_t x, int8_t y, int coding)
 {
-	uint8_t mag;
+	const uint8_t mag = 128;
 	unsigned int error;
-	mag = sqrt(x*x + y*y);
 
 	error = abs(x - (coding & 0x02 ? mag : -mag)) +
 			abs(y - (coding & 0x01 ? mag : -mag));
@@ -280,6 +262,8 @@ write_bits(const uint8_t *bits, size_t count, uint8_t *out)
 	int bytes_out;
 	uint8_t accum;
 
+	assert(!(count & 0x7));
+
 	bytes_out = 0;
 
 	accum = bits[0] << 7;
@@ -291,6 +275,8 @@ write_bits(const uint8_t *bits, size_t count, uint8_t *out)
 		}
 		accum |= bits[i] << (7 - (i&0x07));
 	}
+	*out = accum;
+	bytes_out++;
 
 	return bytes_out;
 }
