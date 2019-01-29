@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include "correlator.h"
-#include "lrpt.h"
 #include "options.h"
+#include "packet.h"
+#include "reedsolomon.h"
 #include "utils.h"
 #include "viterbi.h"
 
-const uint8_t SYNC_WORD[] = {0x1a, 0xcf, 0xfc, 0x1d};
 
 int
 main(int argc, char *argv[])
@@ -16,9 +16,14 @@ main(int argc, char *argv[])
 	Source *s;
 	Viterbi *v;
 	Correlator *co;
-	int8_t buf[SOFT_FRAME_SIZE * 2];
-	uint8_t decoded[FRAME_SIZE];
+	ReedSolomon *rs;
+	int8_t buf[SOFT_FRAME_SIZE];
+	uint8_t decoded[FRAME_SIZE * 2];
+	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+	int decoded_idx = 0;
+	Cadu cadu;
 	int bytes_read;
+	int rs_fix_count;
 	int frame_offset;
 	/* Command-line changeable variables {{{*/
 	char *out_fname, *in_fname;
@@ -62,31 +67,59 @@ main(int argc, char *argv[])
 		free_fname_on_exit = 1;
 	}
 
+
+	rs = rs_init(INTERLEAVING);
+
 	s = src_open(in_fname, 8);
 	v = viterbi_init();
-	co = correlator_init(SYNC_WORD);
+	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
+	co = correlator_init(encoded_syncword);
+	packet_init();
 
-	for (int i=0; i<100; i++) {
+	for (int i=0; i<1000; i++) {
+		/* Read a frame */
 		src_read(s, SOFT_FRAME_SIZE, buf);
-
+		/* Correlate to find the frame offset */
 		frame_offset = correlator_soft_correlate(co, buf, SOFT_FRAME_SIZE);
-/*		printf("Frame offset: %d\n", frame_offset);*/
 
-		if (frame_offset) {
-			memmove(buf, buf+frame_offset, SOFT_FRAME_SIZE - frame_offset);
-			src_read(s, frame_offset, buf + SOFT_FRAME_SIZE - frame_offset);
-		}
+		/* Correct for the frame offset */
+		memmove(buf, buf+frame_offset, SOFT_FRAME_SIZE - frame_offset);
+		src_read(s, frame_offset, buf + SOFT_FRAME_SIZE - frame_offset);
 
+		/* Fix phase ambiguity */
 		correlator_soft_fix(co, buf, SOFT_FRAME_SIZE);
-		bytes_read = viterbi_decode(v, buf, SOFT_FRAME_SIZE, decoded);
-/*		printf("Decoded %d bytes\n", bytes_read);*/
-		fwrite(decoded, bytes_read, 1, stdout);
-		fflush(stdout);
+
+		/* Feed frame to the Viterbi decoder */
+		bytes_read = viterbi_decode(v, decoded+decoded_idx, buf, SOFT_FRAME_SIZE);
+		decoded_idx += bytes_read;
+
+		/* This is all because of the delay the Viterbi decoder introduces...
+		 * thanks Viterbi, thanks a lot */
+		if (decoded_idx >= (int)FRAME_SIZE - 1) {
+			memcpy(&cadu, decoded, sizeof(cadu));
+			memmove(decoded, decoded+sizeof(Cadu), decoded_idx - sizeof(Cadu));
+			decoded_idx -= sizeof(Cadu);
+
+			/* Descramble */
+			packet_descramble(&cadu.cvcdu);
+			/* Reed-Solomon fix */
+			rs_fix_count = rs_fix_packet(rs, &cadu.cvcdu, NULL);
+
+			if (rs_fix_count >= 0) {
+				printf("Sync: 0x%08X\n", cadu.sync_marker);
+				packet_vcdu_dump(&cadu.cvcdu);
+				printf("\n");
+			}
+
+/*			fwrite((uint8_t*)&cadu, sizeof(cadu), 1, stdout);*/
+			fflush(stdout);
+		}
 	}
 
-	src_close(s);
+	rs_deinit(rs);
 	viterbi_deinit(v);
 	correlator_deinit(co);
+	src_close(s);
 
 
 	if (free_fname_on_exit) {

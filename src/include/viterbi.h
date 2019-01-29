@@ -30,11 +30,12 @@ typedef struct {
 	Transition trans[N_STATES][2];
 	Path *mem[N_STATES];
 	Path *tmp[N_STATES];
+	Source *src;
 } Viterbi;
 
 void     viterbi_deinit(Viterbi *v);
-int      viterbi_decode(Viterbi *v, const int8_t *in, size_t len, uint8_t *out);
-int      viterbi_encode(const uint8_t *in, size_t len, uint8_t *out);
+int      viterbi_decode(Viterbi *v, uint8_t *out, const int8_t *in, size_t len);
+int      viterbi_encode(uint8_t *out, const uint8_t *in, size_t len);
 Viterbi* viterbi_init();
 
 #endif

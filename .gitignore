@@ -1,3 +1,4 @@
+**/*.pdf
 **/tags
 **/*.o
 src/lrptdec

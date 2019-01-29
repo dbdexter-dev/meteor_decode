@@ -6,7 +6,6 @@
 #include "utils.h"
 #include "viterbi.h"
 
-static void dump_memory(const Viterbi *v);
 static void compute_trans(Viterbi *v);
 static int  find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state);
 static int  parity(uint8_t x);
@@ -54,7 +53,7 @@ viterbi_init()
 }
 
 int
-viterbi_decode(Viterbi *self, const int8_t *in, size_t len, uint8_t *out)
+viterbi_decode(Viterbi *self, uint8_t *out, const int8_t *in, size_t len)
 {
 	unsigned fwd_depth;
 	int in_pos, bytes_out;
@@ -63,8 +62,10 @@ viterbi_decode(Viterbi *self, const int8_t *in, size_t len, uint8_t *out)
 	int8_t x, y;
 	Path *best, *tmp;
 
+	assert(self && in);
 	/* Len must be a multiple of 8 */
 	assert(!(len & 0x07));
+
 	in_pos = 0;
 	bytes_out = 0;
 
@@ -122,9 +123,9 @@ viterbi_decode(Viterbi *self, const int8_t *in, size_t len, uint8_t *out)
 }
 
 /* Not really a part of the Viterbi algorithm, but still fits within this file.
- * Byte-wise convolutional encoder, same parameters as the decoder */
+ * Byte-wise convolutional encoder, same parameters as the decoder (G1,G2,N,K) */
 int
-viterbi_encode(const uint8_t *in, size_t len, uint8_t *out)
+viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 {
 	unsigned int state;
 	int i, bit_idx;
@@ -151,20 +152,6 @@ viterbi_encode(const uint8_t *in, size_t len, uint8_t *out)
 }
 
 /* Static functions {{{*/
-static void
-dump_memory(const Viterbi *self) 
-{
-	int i;
-
-	printf("===============================\n");
-	for (i=0; i<N_STATES; i++) {
-		printf("%p ", (void*)self->mem[i]);
-		printf("%p \t", (void*)self->tmp[i]);
-	}
-	printf("\n===============================\n");
-	return;
-}
-
 /* Given an end state, find the previous state that gets to it with the least
  * effort */
 static int

@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "correlator.h"
-#include "lrpt.h"
 #include "utils.h"
 #include "viterbi.h"
 
@@ -12,34 +11,25 @@ typedef enum {
 } Phase;
 
 static int  correlate(int8_t x, uint8_t hard);
-static void add_pattern(Correlator *self, uint8_t *pattern);
-static void iq_rotate(uint8_t *buf, size_t count, Phase p);
+static void add_pattern(Correlator *self, const uint8_t *pattern);
+static void iq_rotate_hard(uint8_t *buf, size_t count, Phase p);
 static void iq_rotate_soft(int8_t *buf, size_t count, Phase p);
-static void iq_reverse(uint8_t *buf, size_t count);
+static void iq_reverse_hard(uint8_t *buf, size_t count);
 static void iq_reverse_soft(int8_t *buf, size_t count);
-static int  qw_correlate(int8_t *soft, uint8_t *hard);
+static int  qw_correlate(const int8_t *soft, const uint8_t *hard);
 
 /* 90 degree phase shift + phase mirroring lookup table 
  * XXX HARD BYTES, NOT SOFT SAMPLES XXX
  */
-int8_t _rot_lut[256];
-int8_t _inv_lut[256];
-
-
-void
-correlator_deinit(Correlator *c)
-{
-	free(c->patterns);
-	free(c);
-}
+static int8_t _rot_lut[256];
+static int8_t _inv_lut[256];
 
 
 /* Initialize the correlator */
 Correlator*
-correlator_init(const uint8_t syncword[4])
+correlator_init(uint8_t syncword[8])
 {
 	int i;
-	uint8_t encoded_syncword[8];
 	Correlator *c;
 
 	c = safealloc(sizeof(*c));
@@ -52,55 +42,24 @@ correlator_init(const uint8_t syncword[4])
 		_inv_lut[i] = (i & 0x55) << 1 | (i & 0xAA) >> 1;
 	}
 
-	/* Find the coded version of the pattern */
-	viterbi_encode(syncword, 4, encoded_syncword);
-
 	/* Correlate for all 8 possible rotations of the syncword */
 	for (i=0; i<4; i++) {
-		add_pattern(c, encoded_syncword);
-		iq_rotate(encoded_syncword, 8, PHASE_90);
+		add_pattern(c, syncword);
+		iq_rotate_hard(syncword, 8, PHASE_90);
 	}
-	iq_reverse(encoded_syncword, 8);
+	iq_reverse_hard(syncword, 8);
 	for (i=0; i<4; i++) {
-		add_pattern(c, encoded_syncword);
-		iq_rotate(encoded_syncword, 8, PHASE_90);
+		add_pattern(c, syncword);
+		iq_rotate_hard(syncword, 8, PHASE_90);
 	}
 
 	return c;
 }
 
-/* Correct a frame based on the pattern we locked on to earlier */
-void
-correlator_soft_fix(Correlator *self, int8_t* frame, size_t size)
-{
-	int to_apply;
-
-	to_apply = self->active_correction;
-	if (to_apply > 3) {
-		to_apply -= 4;
-		iq_reverse_soft(frame, size);
-	}
-
-	switch(to_apply) {
-	case 0:
-		break;
-	case 1:
-		iq_rotate_soft(frame, size, PHASE_90);
-		break;
-	case 2:
-		iq_rotate_soft(frame, size, PHASE_180);
-		break;
-	case 3:
-		iq_rotate_soft(frame, size, PHASE_270);
-		break;
-	default:
-		break;
-	}
-}
 
 /* Try to find one of the patterns inside a frame */
 int
-correlator_soft_correlate(Correlator *self, int8_t *frame, size_t len)
+correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 {
 	size_t i, pattern;
 	int max_corr, max_corr_pos, tmp_corr;
@@ -120,7 +79,9 @@ correlator_soft_correlate(Correlator *self, int8_t *frame, size_t len)
 			if (tmp_corr > CORRELATION_THR) {
 				self->active_correction = pattern;
 				max_corr_pos = i;
-				goto cleanup;
+				free(correlation);
+				free(corr_pos);
+				return i;
 			}
 
 			if (tmp_corr > correlation[pattern]) {
@@ -141,17 +102,74 @@ correlator_soft_correlate(Correlator *self, int8_t *frame, size_t len)
 		}
 	}
 
-cleanup:
 	free(correlation);
 	free(corr_pos);
-
 	return max_corr_pos;
 }
+
+
+/* Get the bit error rate between soft samples and (corresponding) hard samples */
+size_t
+correlator_soft_errors(const int8_t *frame, const uint8_t* ref, size_t len)
+{
+	size_t i, j;
+	size_t error_count;
+
+	error_count = 0;
+	for (i=0; i<len; i++) {
+		for (j=0; j<8; j++) {
+			if (!correlate(frame[i*8+j],  (ref[i] >> (7-j)))) {
+				error_count++;
+			}
+		}
+	}
+
+	return error_count;
+}
+
+/* Correct a frame based on the pattern we locked on to earlier */
+void
+correlator_soft_fix(Correlator *self, int8_t* frame, size_t len)
+{
+	int to_apply;
+
+	to_apply = self->active_correction;
+	if (to_apply > 3) {
+		to_apply -= 4;
+		iq_reverse_soft(frame, len);
+	}
+
+	switch(to_apply) {
+	case 0:
+		break;
+	case 1:
+		iq_rotate_soft(frame, len, PHASE_90);
+		break;
+	case 2:
+		iq_rotate_soft(frame, len, PHASE_180);
+		break;
+	case 3:
+		iq_rotate_soft(frame, len, PHASE_270);
+		break;
+	default:
+		break;
+	}
+}
+
+
+
+void
+correlator_deinit(Correlator *c)
+{
+	free(c->patterns);
+	free(c);
+}
+
 
 /* Static functions {{{*/
 /* Add a pattern to the list we'll be looking for */
 static void
-add_pattern(Correlator *self, uint8_t *pattern)
+add_pattern(Correlator *self, const uint8_t *pattern)
 {
 	int i;
 
@@ -166,7 +184,7 @@ add_pattern(Correlator *self, uint8_t *pattern)
 
 /* Rotate a bit pattern 90 degrees in phase */
 static void
-iq_rotate(uint8_t *buf, size_t count, Phase p)
+iq_rotate_hard(uint8_t *buf, size_t count, Phase p)
 {
 	size_t i;
 
@@ -213,7 +231,7 @@ iq_rotate_soft(int8_t *buf, size_t count, Phase p)
 			
 /* Flip I<->Q in a bit pattern */
 static void
-iq_reverse(uint8_t *buf, size_t count)
+iq_reverse_hard(uint8_t *buf, size_t count)
 {
 	size_t i;
 	
@@ -245,7 +263,7 @@ correlate(int8_t x, uint8_t hard)
 
 /* Correlate a soft qword and a hard qword */
 static int
-qw_correlate(int8_t *soft, uint8_t *hard)
+qw_correlate(const int8_t *soft, const uint8_t *hard)
 {
 	int i, j, correlation;
 

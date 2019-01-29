@@ -23,6 +23,12 @@ int
 src_read(Source *src, size_t count, int8_t *buf) {
 	int samples_read;
 
+	if (!buf) {
+		fseek(src->fd, count, SEEK_CUR); 
+		return 0;
+	}
+
+
 	if (src->bps == 8) {
 		samples_read = fread(buf, sizeof(*buf), count, src->fd);
 	} else {
