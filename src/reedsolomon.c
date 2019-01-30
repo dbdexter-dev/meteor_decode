@@ -23,7 +23,7 @@ static uint8_t _alpha[RS_N];
 static uint8_t _logtable[RS_N];
 
 ReedSolomon*
-rs_init(int interleaving)
+rs_init(size_t size, int interleaving)
 {
 	int i, exp;
 	uint16_t tmp;
@@ -31,6 +31,7 @@ rs_init(int interleaving)
 
 	ret = safealloc(sizeof(*ret));
 	ret->interleaving = interleaving;
+	ret->block = safealloc(size / interleaving);
 
 	/* Compute the log-multiplication matrix */
 	_alpha[0] = 0x01;
@@ -57,21 +58,19 @@ rs_init(int interleaving)
 int
 rs_fix_packet(ReedSolomon *self, Cvcdu *pkt, int *fixes)
 {
-	size_t block_size;
-	uint8_t *block;
 	int i;
 	int ret;
 	int corr_count;
+	size_t block_size;
 
 	block_size = sizeof(*pkt)/self->interleaving;
-	block = safealloc(block_size);
 	ret = 0;
 	for (i=0; i<self->interleaving; i++) {
 		/* Separate an interleaved block */
-		deinterleave(block, (uint8_t*)pkt, self->interleaving, i, block_size);
+		deinterleave(self->block, (uint8_t*)pkt, self->interleaving, i, block_size);
 
 		/* Apply RS error correction */
-		corr_count = fix_block(self, block, RS_N);
+		corr_count = fix_block(self, self->block, RS_N);
 		if (fixes) {
 			fixes[i] = corr_count;
 		}
@@ -79,11 +78,9 @@ rs_fix_packet(ReedSolomon *self, Cvcdu *pkt, int *fixes)
 		ret = (ret>=0 && corr_count >= 0) ? ret+corr_count : -1;
 
 		/* Re-interleave the (hopefully) corrected packet */
-		interleave((uint8_t*)pkt, block, self->interleaving, i, sizeof(pkt));
+		interleave((uint8_t*)pkt, self->block, self->interleaving, i, sizeof(pkt));
 	}
 
-	free(block);
-	free(fixes);
 	return ret;
 }
 
@@ -118,7 +115,7 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 		return 0;
 	}
 
-	/* Compute lambda using Berlekamp-Massey {{{ */
+	/* Compute lambda using Berlekamp-Massey */
 	memset(lambda, 0, sizeof(lambda));
 	memset(prev_lambda, 0, sizeof(prev_lambda));
 	lambda[0] = prev_lambda[0] = 1;
@@ -140,10 +137,10 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 			for (i=m; i<RS_T+1; i++) {
 				lambda[i] ^= gf_mul(gf_div(delta, prev_delta), prev_lambda[i-m]);
 			}
-
 			for (i=0; i<RS_T+1; i++) {
 				prev_lambda[i] = tmp[i];
 			}
+
 			prev_delta = delta;
 			lambda_deg = n + 1 - lambda_deg;
 			m = 1;
@@ -154,8 +151,8 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 			m++;
 		}
 	}
-	/* }}} */
-	/* Bruteforce the roots of lambda {{{*/
+
+	/* Bruteforce the roots of lambda */
 	for (i=0, error_count=0; i<RS_N; i++) {
 		if (gf_poly_eval(lambda, i, RS_T+1) == 0) {
 			/* This is black magic */
@@ -170,21 +167,21 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 	if (error_count != lambda_deg) {
 		return -1;
 	}
-	/*}}}*/
 
-	/* omega = syndrome * lambda, lambda_prime = formal derivative of lambda */
+	/* Compute omega and lambda_prime, necessary for the Forney algorithm */
 	omega = gf_poly_mul(syndrome, lambda, RS_2T, RS_T+1);
 	lambda_prime = gf_poly_deriv(lambda, RS_T+1);
 
-	/* Correct error_count */
+	/* Fix errors in the block */
 	for (i=0; i<error_count; i++) {
 		/* lambda_root = 1/Xi, Xi being the i-th error locator */
-		fcr = _logtable[gf_pow(lambda_root[i], FIRST_CONSEC_ROOT-1)];
-		/* Error is here */
-		num = _logtable[gf_poly_eval(omega,       lambda_root[i], RS_2T)];
-		den = _logtable[gf_poly_eval(lambda_prime,lambda_root[i], RS_T)];
-		/* Error is here END*/
-		block[error_pos[i]] ^= _alpha[(num + fcr - den + RS_N) % RS_N];
+		fcr = gf_pow(lambda_root[i], FIRST_CONSEC_ROOT-1);
+		num = gf_poly_eval(omega,       lambda_root[i], RS_2T);
+		den = gf_poly_eval(lambda_prime,lambda_root[i], RS_T);
+
+		if (error_pos[i] < len) {
+			block[error_pos[i]] ^= gf_div(gf_mul(num, fcr), den);
+		}
 	}
 
 	free(omega);

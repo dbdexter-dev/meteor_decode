@@ -6,12 +6,12 @@ LDFLAGS += -lm -lpthread -lncursesw
 
 .PHONY: strip clean
 
-default: lrptdec
+default: meteor_decode
 
-strip: lrptdec
+strip: meteor_decode
 	strip $^
 
-lrptdec: ${OBJ}
+meteor_decode: ${OBJ}
 	gcc -o $@ $^ ${LDFLAGS}
 
 main.o: main.c include/options.h

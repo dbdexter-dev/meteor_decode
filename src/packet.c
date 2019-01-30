@@ -1,94 +1,86 @@
 #include <stdio.h>
 #include <stdint.h>
-#include "hexdump.h"
 #include "packet.h"
 
-#define NOISE_PERIOD 255
+static int vcdu_header_present(const Cvcdu *p);
 
+/* From packet.h */
 const uint8_t SYNCWORD[] = {0x1a, 0xcf, 0xfc, 0x1d};
 
-static void compute_noise();
-static uint8_t _noise[NOISE_PERIOD];
-static int vcdu_header_present(Cvcdu *p);
-static int vcdu_header_ptr(Cvcdu *p);
 
-
-/* Byte by byte, xor the packet with the added noise */
-void
-packet_descramble(Cvcdu *p)
+/* VCDU-oriented functions */
+void*
+vcdu_header_ptr(Cvcdu *p)
 {
-	int i;
-
-	for (i=0; i<(int)sizeof(*p); i++) {
-		((char*)p)[i] ^= _noise[i % NOISE_PERIOD];
+	if(vcdu_header_present(p)) {
+		return (uint8_t*)&p->mpdu_data + vcdu_header_offset(p);
 	}
-}
-
-void
-packet_init()
-{
-	compute_noise();
+	return NULL;
 }
 
 uint32_t
-packet_vcdu_counter(Cvcdu *p)
+vcdu_counter(const Cvcdu *p)
 {
 	return (p->counter[0] << 16) | (p->counter[1] << 8) | (p->counter[2]);
 }
 
-uint8_t 
-packet_vcdu_spacecraft(const Cvcdu *p)
+int
+vcdu_id(const Cvcdu *p)
+{
+	return p->info[1] & 0x3F;
+}
+
+int 
+vcdu_spacecraft(const Cvcdu *p)
 {
 	return (p->info[0] & 0x3F) << 2 | (p->info[1] >> 5);
 }
 
-void
-packet_vcdu_dump(Cvcdu *p)
+int
+vcdu_vcid(const Cvcdu *p)
 {
-	int header_presence;
-
-	header_presence = vcdu_header_present(p);
-
-	printf("[%d] ", packet_vcdu_counter(p));
-	printf("Spacecraft ID: 0x%02x\n", packet_vcdu_spacecraft(p));
-	printf("MPDU Header: %s\n", header_presence ? "present" : "absent");
-	if (header_presence) {
-		printf("MPDU header offset: %d\n", vcdu_header_ptr(p));
-	}
+	return p->info[1] & 0x3F;
 }
 
 
-/* Static functions {{{*/
-static int
-vcdu_header_present(Cvcdu *p)
+
+/* MPDU-oriented functions */
+int
+mpdu_apid(const Mpdu *p)
 {
-	return !(p->mpdu_header[0] >> 3);
+	return (p->id[0] & 0x07) << 8 | p->id[1];
 }
 
-static int
-vcdu_header_ptr(Cvcdu *p)
+int
+mpdu_grouping(const Mpdu *p)
+{
+	return p->seq_ctrl[0] >> 6;
+}
+
+uint32_t
+mpdu_msec(const Mpdu *p)
+{
+	return p->time.msec[0] << 24 | p->time.msec[1] << 16 | 
+	       p->time.msec[2] << 8 | p->time.msec[3];
+}
+
+uint16_t
+mpdu_len(const Mpdu *p)
+{
+	return p->len[0] << 8 | p->len[1];
+}
+
+int
+vcdu_header_offset(const Cvcdu *p)
 {
 	return (p->mpdu_header[0] & 0x07) << 8 | p->mpdu_header[1];
 }
 
-/* Generate the pseudorandom noise the packets are scrambled with */
-/* Generator poly: x^8 + x^7 + x^5 + x^3 + 1 */
-static void
-compute_noise()
+/* Static functions {{{*/
+static int
+vcdu_header_present(const Cvcdu *p)
 {
-	uint8_t state, out, accum;
-	int i, j;
-
-	state = 0xFF;
-	for (i=0; i<NOISE_PERIOD; i++) {
-		accum = 0;
-		for (j=0; j<8; j++) {
-			out = ((state >> 7) ^ (state >> 5) ^ (state >> 3) ^ (state >> 0));
-			accum = (accum << 1) | (state >> 0 & 0x01);
-			state = (state >> 1) | (out << 7);
-		}
-		_noise[i] = accum;
-	}
+	return !(p->mpdu_header[0] >> 3);
 }
 
 /*}}}*/

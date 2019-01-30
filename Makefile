@@ -10,7 +10,7 @@ default: release
 
 debug: CFLAGS += -g -D__DEBUG -Wextra
 debug: src
-release: CFLAGS += -O2 -ffast-math -flto
+release: CFLAGS += -O2 
 release: LDFLAGS += -flto
 release: src
 
@@ -26,9 +26,9 @@ clean:
 install: default
 	@echo Installing executable file to ${PREFIX}/bin
 	@mkdir -p ${PREFIX}/bin
-	@cp src/lrptdec ${PREFIX}/bin
+	@cp src/meteor_decode ${PREFIX}/bin
 	@chmod 755 ${PREFIX}/bin/lrptdec
 
 uninstall:
 	@echo Removing executable file from ${PREFIX}/bin
-	@rm -f ${PREFIX}/bin/lrptdec
+	@rm -f ${PREFIX}/bin/meteor_decode

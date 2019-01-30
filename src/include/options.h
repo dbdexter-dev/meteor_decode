@@ -11,6 +11,4 @@ struct option longopts[] = {
 	{ "version",    0, NULL, 'v' },
 };
 
-
-
 #endif

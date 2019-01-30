@@ -2,7 +2,8 @@
 #define LRPTDEC_VITERBI_H
 
 #include <stdint.h>
-#include "file.h"
+#include <stdlib.h>
+#include "source.h"
 
 #define K 7
 #define G1 0x79
@@ -14,28 +15,8 @@
 #define BACKTRACK_DEPTH ((MEM_DEPTH - N_STATES) & 0xFFFFFFF8)
 #define VITERBI_DELAY (MEM_DEPTH - BACKTRACK_DEPTH)
 
-typedef struct {
-	uint8_t output;
-	unsigned int next_state;
-} Transition;
+HardSource* viterbi_init(SoftSource *src);
 
-typedef struct state {
-	int id;
-	unsigned int cost;
-	uint8_t data[MEM_DEPTH+1];
-} Path;
-
-typedef struct {
-	int cur_depth;
-	Transition trans[N_STATES][2];
-	Path *mem[N_STATES];
-	Path *tmp[N_STATES];
-	Source *src;
-} Viterbi;
-
-void     viterbi_deinit(Viterbi *v);
-int      viterbi_decode(Viterbi *v, uint8_t *out, const int8_t *in, size_t len);
-int      viterbi_encode(uint8_t *out, const uint8_t *in, size_t len);
-Viterbi* viterbi_init();
+int viterbi_encode(uint8_t *out, const uint8_t *in, size_t len);
 
 #endif

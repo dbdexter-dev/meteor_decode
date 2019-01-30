@@ -10,6 +10,7 @@ void  fatal(char *msg);
 char* gen_fname(int apid);
 void* safealloc(size_t size);
 void  splash(void);
+char* timeofday(unsigned int msec);
 void  usage(const char *pname);
 void  version(void);
 

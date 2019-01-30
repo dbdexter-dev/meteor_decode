@@ -2,20 +2,78 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
-#include "file.h"
+#include "source.h"
 #include "utils.h"
 #include "viterbi.h"
+
+typedef struct {
+	uint8_t output;
+	unsigned int next_state;
+} Transition;
+
+typedef struct state {
+	int id;
+	unsigned int cost;
+	uint8_t data[MEM_DEPTH+1];
+} Path;
+
+typedef struct {
+	int cur_depth;
+	Transition trans[N_STATES][2];
+	Path *mem[N_STATES];
+	Path *tmp[N_STATES];
+	SoftSource *src;
+} Viterbi;
 
 static void compute_trans(Viterbi *v);
 static int  find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state);
 static int  parity(uint8_t x);
 static int  write_bits(const uint8_t *bits, size_t count, uint8_t *out);
+static int  viterbi_deinit(HardSource *v);
+static int  viterbi_decode(HardSource *v, uint8_t *out, size_t count);
+static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
 
 static unsigned int cost(int8_t x, int8_t y, int coding);
 
-void
-viterbi_deinit(Viterbi *v)
+HardSource*
+viterbi_init(SoftSource *src)
 {
+	int i;
+	HardSource *ret;
+	Viterbi *v;
+
+	ret = safealloc(sizeof(*ret));
+	ret->read = viterbi_decode;
+	ret->close = viterbi_deinit;
+
+	v = safealloc(sizeof(*v));
+	v->src = src;
+	v->cur_depth = 0;
+
+	for (i=0; i<N_STATES; i++) {
+		v->mem[i] = calloc(1, sizeof(*v->mem[0]));
+		v->mem[i]->id = i;
+		v->mem[i]->cost = 0;
+		v->mem[i]->data[0] = (i >> 7) & 0x01;
+
+		v->tmp[i] = calloc(1, sizeof(*v->tmp[0]));
+		v->tmp[i]->id = i;
+		v->tmp[i]->cost = 0;
+		v->tmp[i]->data[0] = (i >> 7) & 0x01;
+	}
+
+	ret->_backend = v;
+
+	/* Compute the transition matrix */
+	compute_trans(v);
+
+	return ret;
+}
+
+static int
+viterbi_deinit(HardSource *src)
+{
+	Viterbi *v = src->_backend;
 	unsigned int i;
 
 	for (i=0; i<N_STATES; i++) {
@@ -23,59 +81,44 @@ viterbi_deinit(Viterbi *v)
 		free(v->tmp[i]);
 	}
 	free(v);
-}
 
-Viterbi*
-viterbi_init()
-{
-	int i;
-	Viterbi *ret;
-
-	ret = safealloc(sizeof(*ret));
-	ret->cur_depth = 0;
-
-	for (i=0; i<N_STATES; i++) {
-		ret->mem[i] = calloc(1, sizeof(*ret->mem[0]));
-		ret->mem[i]->id = i;
-		ret->mem[i]->cost = 0;
-		ret->mem[i]->data[0] = (i >> 7) & 0x01;
-
-		ret->tmp[i] = calloc(1, sizeof(*ret->tmp[0]));
-		ret->tmp[i]->id = i;
-		ret->tmp[i]->cost = 0;
-		ret->tmp[i]->data[0] = (i >> 7) & 0x01;
-	}
-
-	/* Compute the transition matrix */
-	compute_trans(ret);
-
-	return ret;
+	src->close(src);
+	free(src);
+	return 0;
 }
 
 int
-viterbi_decode(Viterbi *self, uint8_t *out, const int8_t *in, size_t len)
+viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 {
-	unsigned fwd_depth;
-	int in_pos, bytes_out;
+	int fwd_depth;
+	int in_pos, points_in, bytes_out;
 	int i, count, cur_state;
+	int8_t in[2*MEM_DEPTH];
 	unsigned int mincost;
 	int8_t x, y;
 	Path *best, *tmp;
+	Viterbi *self = src->_backend;
 
-	assert(self && in);
 	/* Len must be a multiple of 8 */
 	assert(!(len & 0x07));
 
-	in_pos = 0;
 	bytes_out = 0;
 
-	/* Repeat until $len bytes have been read */
-	while ((int)len > in_pos) {
-/*		printf("Current depth: %d, max depth: %d\n", self->cur_depth, MEM_DEPTH);*/
-		fwd_depth = MIN((size_t)(MEM_DEPTH - self->cur_depth), len/2);
+	/* Repeat until $len bytes have been written out, or until we exhausted the
+	 * source we get the data from */
+	while ((int)len > bytes_out) {
+		/* Calculate how deep to go and how many bytes to read */
+		fwd_depth = (size_t)(MEM_DEPTH - self->cur_depth);
+		points_in = self->src->read(self->src, in, 2*fwd_depth)/2;
+		if (points_in < fwd_depth) {
+			/* We reached the end of the source, next run just flush the viterbi
+			 * memory instead of doing the whole algorithm */
+			src->read = viterbi_flush;
+		}
+		fwd_depth = points_in;
 
 		/* Run the Viterbi algorithm forward */
-		for (i=0; i<(int)fwd_depth; i++) {
+		for (i=0, in_pos=0; i<(int)fwd_depth; i++) {
 			/* Get a symbol from the source */
 			x = in[in_pos++];
 			y = in[in_pos++];
@@ -85,7 +128,7 @@ viterbi_decode(Viterbi *self, uint8_t *out, const int8_t *in, size_t len)
 				find_best(self, x, y, self->tmp[cur_state]);
 			}
 
-			/* Update the Viterbi decoder memory */
+			/* Update the Viterbi decoder memory (swap tmp and mem) */
 			for (cur_state=0; cur_state<N_STATES; cur_state++) {
 				tmp = self->mem[cur_state];
 				self->mem[cur_state] = self->tmp[cur_state];
@@ -105,8 +148,7 @@ viterbi_decode(Viterbi *self, uint8_t *out, const int8_t *in, size_t len)
 		/* Write out depth - BACKTRACK_DEPTH bits */
 		if (self->cur_depth > (int)BACKTRACK_DEPTH) {
 			count = self->cur_depth - BACKTRACK_DEPTH;
-			i = write_bits(best->data, count, out);
-			out += i;
+			i = write_bits(best->data, count, out + bytes_out);
 			bytes_out += i;
 
 			/* Realign data and normalize the costs */
@@ -120,6 +162,34 @@ viterbi_decode(Viterbi *self, uint8_t *out, const int8_t *in, size_t len)
 	}
 
 	return bytes_out;
+}
+
+/* Finishing step of the Viterbi algorithm: don't keep any nodes for future
+ * computations, just return the most likely ending sequence */
+int
+viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen)
+{
+	int i;
+	Path *best;
+	Viterbi *self = v->_backend;
+
+	if (self->cur_depth <= 0) {
+		return 0;
+	}
+
+	/* Find the best candidate */
+	best = self->mem[0];
+	for (i=1; i<N_STATES; i++) {
+		if (self->mem[i]->cost < best->cost) {
+			best = self->mem[i];
+		}
+	}
+
+	/* Write out BACKTRACK_DEPTH bits */
+	i = write_bits(best->data, MIN(maxlen, (size_t)self->cur_depth), out);
+
+	self->cur_depth = 0;
+	return i;
 }
 
 /* Not really a part of the Viterbi algorithm, but still fits within this file.

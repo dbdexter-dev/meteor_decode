@@ -4,15 +4,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "source.h"
 
-typedef struct src{
-	FILE *fd;
-	int bps;
-} Source;
-
-Source* src_open(const char *path, int bps);
-int     src_read(Source *src, size_t count, int8_t *buf);
-void    src_close(Source *src);
-
+SoftSource* src_soft_open(const char *path, int bps);
+HardSource* src_hard_open(const char *path); /* TODO */
 
 #endif

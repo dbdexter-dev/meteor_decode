@@ -4,6 +4,8 @@
 #include <time.h>
 #include "utils.h"
 
+static char _time_of_day[sizeof("HH:MM:SS.mmm")];
+
 void
 fatal(char *msg)
 {
@@ -51,13 +53,27 @@ safealloc(size_t size)
 	return ptr;
 }
 
-
-
 void
 splash()
 {
 	fprintf(stderr, "\nLRPT decoder v%s\n\n", VERSION);
 }
+
+char*
+timeofday(unsigned int msec)
+{
+	int hr, min, sec, ms;
+
+	ms =  msec % 1000;
+	sec = msec / 1000 % 60;
+	min = msec / 1000 / 60 % 60;
+	hr =  msec / 1000 / 60 / 60 % 24;
+
+	sprintf(_time_of_day, "%02d:%02d:%02d.%03d", hr, min, sec, ms);
+	
+	return _time_of_day;
+}
+
 
 void
 usage(const char *pname)

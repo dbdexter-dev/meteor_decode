@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include "correlator.h"
+#include "packet.h"
+#include "source.h"
 #include "utils.h"
 #include "viterbi.h"
 
@@ -9,6 +12,21 @@ typedef enum {
 	PHASE_180,
 	PHASE_270,
 } Phase;
+
+typedef struct {
+	uint8_t (*patterns)[8];
+	size_t pattern_count;
+	int active_correction;
+	int8_t buffer[SOFT_FRAME_SIZE * 2];
+	int buffer_offset, frame_offset;
+	SoftSource *src;
+} Correlator;
+
+static int    correlator_read_aligned(SoftSource *src, int8_t *out, size_t count);
+static int    correlator_deinit_soft(SoftSource *c);
+static int    correlator_soft_correlate(Correlator *c, const int8_t* frame, size_t len);
+static size_t correlator_soft_errors(const int8_t* frame, const uint8_t* ref, size_t len);
+static void   correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
 
 static int  correlate(int8_t x, uint8_t hard);
 static void add_pattern(Correlator *self, const uint8_t *pattern);
@@ -23,23 +41,33 @@ static int  qw_correlate(const int8_t *soft, const uint8_t *hard);
  */
 static int8_t _rot_lut[256];
 static int8_t _inv_lut[256];
-
+static int    _initialized = 0;
 
 /* Initialize the correlator */
-Correlator*
-correlator_init(uint8_t syncword[8])
+SoftSource*
+correlator_init_soft(SoftSource *src, uint8_t syncword[8])
 {
 	int i;
 	Correlator *c;
+	SoftSource *ret;
+
+	ret = safealloc(sizeof(*ret));
+	ret->read = correlator_read_aligned;
+	ret->close = correlator_deinit_soft;
 
 	c = safealloc(sizeof(*c));
 	c->pattern_count = 0;
 	c->patterns = NULL;
 	c->active_correction = 0;
+	c->buffer_offset = 0;
+	c->src = src;
 
-	for (i=0; i<255; i++) {
-		_rot_lut[i] = ((i & 0x55) ^ 0x55) << 1 | (i & 0xAA) >> 1;
-		_inv_lut[i] = (i & 0x55) << 1 | (i & 0xAA) >> 1;
+	if (!_initialized) {
+		for (i=0; i<255; i++) {
+			_rot_lut[i] = ((i & 0x55) ^ 0x55) << 1 | (i & 0xAA) >> 1;
+			_inv_lut[i] = (i & 0x55) << 1 | (i & 0xAA) >> 1;
+		}
+		_initialized = 1;
 	}
 
 	/* Correlate for all 8 possible rotations of the syncword */
@@ -53,7 +81,78 @@ correlator_init(uint8_t syncword[8])
 		iq_rotate_hard(syncword, 8, PHASE_90);
 	}
 
-	return c;
+	ret->_backend = c;
+
+	return ret;
+}
+
+/* Ladies and gentlemen, I present to you:
+ * "The ugliest function ever written, complete with slow and wrong code" II !
+ */
+int
+correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
+{
+	int frame_offset;
+	size_t bytes_in, bytes_out;
+	Correlator *const self = src->_backend;
+
+	bytes_out = 0;
+	if (self->buffer_offset) {
+		bytes_out = MIN(count, SOFT_FRAME_SIZE - self->buffer_offset);
+		memcpy(out, self->buffer + self->buffer_offset + self->frame_offset, bytes_out);
+
+		self->buffer_offset = (self->buffer_offset+bytes_out)%SOFT_FRAME_SIZE;
+		out += bytes_out;
+		count -= bytes_out;
+	}
+
+	if (count > 0) {
+		self->buffer_offset = 0;
+	}
+
+	while (count > 0) {
+		/* Attempt to read a frame into the local buffer */
+		bytes_in = self->src->read(self->src, self->buffer, SOFT_FRAME_SIZE);
+
+		/* If there aren't enough bytes left, fix the frame and return */
+		if (bytes_in < (int)SOFT_FRAME_SIZE) {
+			correlator_soft_fix(self, self->buffer, bytes_in);
+			memcpy(out, self->buffer, MIN(bytes_in, count));
+			if (count < bytes_in) {
+				self->buffer_offset = count;
+			}
+			return bytes_out + MIN(bytes_in, count);
+		}
+
+		/* Check how far we were from the actual frame */
+		frame_offset = correlator_soft_correlate(self, self->buffer, SOFT_FRAME_SIZE);
+
+		/* Read some more bytes to compensate for the offset */
+		bytes_in = self->src->read(self->src, self->buffer+SOFT_FRAME_SIZE, frame_offset);
+		/* Fix the sample's phase */
+		correlator_soft_fix(self, self->buffer + frame_offset, SOFT_FRAME_SIZE);
+
+		/* NOTE: this might copy some garbage at the end, but whatever, it would
+		 * only be for the very last iteration. I'll fix it at some point :P */
+		if (count < SOFT_FRAME_SIZE) {
+			memcpy(out, self->buffer+frame_offset, count);
+			self->frame_offset = frame_offset;
+			self->buffer_offset = count;
+			return bytes_out + count;
+		}
+		memcpy(out, self->buffer+frame_offset, SOFT_FRAME_SIZE);
+
+		/* If there aren't enough bytes left, return */
+		if ((int)bytes_in < frame_offset) {
+			return bytes_out + bytes_in;
+		}
+
+		out += SOFT_FRAME_SIZE;
+		bytes_out += SOFT_FRAME_SIZE;
+		count -= SOFT_FRAME_SIZE;
+	}
+
+	return bytes_out;
 }
 
 
@@ -66,8 +165,8 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 	int *correlation, *corr_pos;
 
 	/* Save the correlation indices and their correlation factor */
-	correlation = calloc(1, sizeof(*correlation) * self->pattern_count);
-	corr_pos = calloc(1, sizeof(*corr_pos) * self->pattern_count);
+	correlation = calloc(self->pattern_count, sizeof(*correlation));
+	corr_pos = calloc(self->pattern_count, sizeof(*corr_pos));
 
 	/* Compute the correlation indices for each position, for each pattern, up
 	 * until there are no qwords left (so 64 bytes early) */
@@ -158,11 +257,17 @@ correlator_soft_fix(Correlator *self, int8_t* frame, size_t len)
 
 
 
-void
-correlator_deinit(Correlator *c)
+int
+correlator_deinit_soft(SoftSource *src)
 {
+	Correlator *c = src->_backend;
+
 	free(c->patterns);
 	free(c);
+	src->close(src);
+	free(src);
+
+	return 0;
 }
 
 

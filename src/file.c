@@ -1,15 +1,34 @@
 #include <stdio.h>
 #include "file.h"
+#include "source.h"
 #include "utils.h"
 
-Source*
-src_open(const char *path, int bps) {
-	Source *ret;
+typedef struct {
+	FILE *fd;
+	int bps;
+} FileSrc;
+
+static int src_soft_read(SoftSource *src, int8_t *buf, size_t count);
+static int src_soft_close(SoftSource *src);
+
+SoftSource*
+src_soft_open(const char *path, int bps) {
+	SoftSource *ret;
+	FileSrc *backend;
 
 	ret = safealloc(sizeof(*ret));
-	ret->bps = (bps <= 0 ? 8 : bps);
+	backend = safealloc(sizeof(*backend));
 
-	if(!(ret->fd = fopen(path, "r"))) {
+	ret->close = src_soft_close;
+	ret->read = src_soft_read;
+	ret->_backend = backend;
+
+	if (bps == 0) {
+		bps = 8;
+	}
+
+	backend->bps = bps;
+	if(!(backend->fd = fopen(path, "r"))) {
 		fatal("Could not find specified file");
 		/* Not reached */
 		return NULL;
@@ -20,8 +39,9 @@ src_open(const char *path, int bps) {
 
 /* Read samples and normalize them to 8-bit values */
 int
-src_read(Source *src, size_t count, int8_t *buf) {
+src_soft_read(SoftSource *self, int8_t *buf, size_t count) {
 	int samples_read;
+	FileSrc *src = self->_backend;
 
 	if (!buf) {
 		fseek(src->fd, count, SEEK_CUR); 
@@ -38,11 +58,14 @@ src_read(Source *src, size_t count, int8_t *buf) {
 	return samples_read;
 }
 
-void
-src_close(Source *src) {
+int
+src_soft_close(SoftSource *self) {
+	FileSrc *src = self->_backend;
+
 	if(src) {
 		fclose(src->fd);
 		free(src);
 	}
+	return 0;
 }
 
