@@ -9,8 +9,14 @@ const uint8_t SYNCWORD[] = {0x1a, 0xcf, 0xfc, 0x1d};
 
 
 /* VCDU-oriented functions */
+int
+vcdu_header_offset(const Cvcdu *p)
+{
+	return (p->mpdu_header[0] & 0x07) << 8 | p->mpdu_header[1];
+}
+
 void*
-vcdu_header_ptr(Cvcdu *p)
+vcdu_mpdu_header_ptr(Cvcdu *p)
 {
 	if(vcdu_header_present(p)) {
 		return (uint8_t*)&p->mpdu_data + vcdu_header_offset(p);
@@ -52,29 +58,56 @@ mpdu_apid(const Mpdu *p)
 }
 
 int
+mpdu_data_len(const Mpdu *p)
+{
+	uint16_t len;
+
+	len = mpdu_raw_len(p) + 1;
+	return len;
+}
+
+uint8_t*
+mpdu_data_ptr(const Mpdu *p)
+{
+	return (uint8_t*)p + MPDU_HDR_SIZE; 
+}
+
+int
 mpdu_grouping(const Mpdu *p)
 {
 	return p->seq_ctrl[0] >> 6;
 }
 
+int
+mpdu_has_sec_hdr(const Mpdu *p)
+{
+	return p->id[0] & 0x08;
+}
+
+
 uint32_t
 mpdu_msec(const Mpdu *p)
 {
+	if (!mpdu_has_sec_hdr(p)) {
+		return 0;
+	}
 	return p->time.msec[0] << 24 | p->time.msec[1] << 16 | 
 	       p->time.msec[2] << 8 | p->time.msec[3];
 }
 
-uint16_t
-mpdu_len(const Mpdu *p)
+int
+mpdu_raw_len(const Mpdu *p)
 {
-	return p->len[0] << 8 | p->len[1];
+	return (p->len[0] << 8 | p->len[1]);
 }
 
 int
-vcdu_header_offset(const Cvcdu *p)
+mpdu_seq(const Mpdu *p)
 {
-	return (p->mpdu_header[0] & 0x07) << 8 | p->mpdu_header[1];
+	return (p->seq_ctrl[0] & 0x3F) << 8 | p->seq_ctrl[1];
 }
+
+
 
 /* Static functions {{{*/
 static int

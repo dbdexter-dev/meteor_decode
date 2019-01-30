@@ -66,6 +66,7 @@ src_soft_close(SoftSource *self) {
 		fclose(src->fd);
 		free(src);
 	}
+	free(self);
 	return 0;
 }
 

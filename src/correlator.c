@@ -86,8 +86,21 @@ correlator_init_soft(SoftSource *src, uint8_t syncword[8])
 	return ret;
 }
 
+int
+correlator_deinit_soft(SoftSource *src)
+{
+	Correlator *c = src->_backend;
+
+	free(c->patterns);
+	c->src->close(c->src);
+	free(c);
+	free(src);
+
+	return 0;
+}
+
 /* Ladies and gentlemen, I present to you:
- * "The ugliest function ever written, complete with slow and wrong code" II !
+ * "The ugliest function ever written II: Electric Boogaloo"  !
  */
 int
 correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
@@ -106,6 +119,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 		count -= bytes_out;
 	}
 
+	/* Reset buffer offset at this point */
 	if (count > 0) {
 		self->buffer_offset = 0;
 	}
@@ -255,20 +269,6 @@ correlator_soft_fix(Correlator *self, int8_t* frame, size_t len)
 	}
 }
 
-
-
-int
-correlator_deinit_soft(SoftSource *src)
-{
-	Correlator *c = src->_backend;
-
-	free(c->patterns);
-	free(c);
-	src->close(src);
-	free(src);
-
-	return 0;
-}
 
 
 /* Static functions {{{*/

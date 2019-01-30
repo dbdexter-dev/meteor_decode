@@ -17,9 +17,9 @@ main(int argc, char *argv[])
 	int pkt_count, pkt_decoded;
 	SoftSource *softsamples, *correlator;
 	HardSource *viterbi;
+	Segment seg;
 	PktProcessor *pp;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
-	Cadu cadu;
 	/* Command-line changeable variables {{{*/
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
@@ -62,31 +62,25 @@ main(int argc, char *argv[])
 		free_fname_on_exit = 1;
 	}
 
-	pp = pkt_init();
 
 	/* Let the chain begin! */
 	softsamples = src_soft_open(in_fname, 8);
 	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
 	correlator = correlator_init_soft(softsamples, encoded_syncword);
 	viterbi = viterbi_init(correlator);
+	pp = pkt_init(viterbi);
 
 	pkt_count = 0;
 	pkt_decoded = 0;
-	while(viterbi->read(viterbi, (uint8_t*)&cadu, sizeof(Cadu))){
-		log("Sync: 0x%08X\t", cadu.sync_marker);
-		if(pkt_process(pp, &cadu.cvcdu) >= 0) {
-			pkt_decoded++;
-		}
-		printf("\n");
+/*	while(pkt_get_next(pp, &seg)){*/
+/*		if (seg.len > 0) {*/
+/*			log("seq=%d len=%d APID=%d\n", seg.seq, seg.len, seg.apid);*/
+/*		}*/
+/*	}*/
+/*	log("Recovered %d/%d packets\n", pkt_decoded, pkt_count);*/
 
-/*			fwrite((uint8_t*)&cadu, sizeof(cadu), 1, stdout);*/
-			fflush(stdout);
-	}
-	printf("Recovered %d/%d packets\n", pkt_decoded, pkt_count);
-
-	pkt_deinit(pp);
 	/* Closing a link closes all the "sub-contractors" */
-	viterbi->close(viterbi);
+	pkt_deinit(pp);
 
 
 	if (free_fname_on_exit) {

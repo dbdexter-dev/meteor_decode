@@ -80,10 +80,11 @@ viterbi_deinit(HardSource *src)
 		free(v->mem[i]);
 		free(v->tmp[i]);
 	}
-	free(v);
 
-	src->close(src);
+	v->src->close(v->src);
+	free(v);
 	free(src);
+
 	return 0;
 }
 
@@ -113,7 +114,7 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 		if (points_in < fwd_depth) {
 			/* We reached the end of the source, next run just flush the viterbi
 			 * memory instead of doing the whole algorithm */
-			src->read = viterbi_flush;
+			return viterbi_flush(src, out, len);
 		}
 		fwd_depth = points_in;
 

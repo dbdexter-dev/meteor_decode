@@ -53,6 +53,13 @@ rs_init(size_t size, int interleaving)
 	return ret;
 }
 
+void
+rs_deinit(ReedSolomon *r)
+{
+	free(r->block);
+	free(r);
+}
+
 /* Check https://public.ccsds.org/Pubs/101x0b4s.pdf to learn more about the RS
  * code in use by the LRPT standard */
 int
@@ -84,11 +91,6 @@ rs_fix_packet(ReedSolomon *self, Cvcdu *pkt, int *fixes)
 	return ret;
 }
 
-void
-rs_deinit(ReedSolomon *r)
-{
-	free(r);
-}
 
 /* Static functions {{{*/
 static int

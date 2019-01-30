@@ -8,11 +8,15 @@
 
 #include <stdint.h>
 
-#define FRAME_SIZE (sizeof(struct _cadu))
+#define FRAME_SIZE (sizeof(Cadu))
 #define FRAME_BITS (FRAME_SIZE << 3)
 #define SOFT_FRAME_SIZE (FRAME_BITS * 2)
 #define INTERLEAVING 4
 #define MCU_SIZE 64
+#define MPDU_SEC_HDR_SIZE 8;
+#define MPDU_HDR_SIZE 6
+#define MPDU_DATA_SIZE 882
+#define VCDU_RS_SIZE 128
 
 typedef struct {
 	uint8_t day[2];
@@ -28,8 +32,7 @@ typedef struct {
 
 	Timestamp time;
 
-	uint8_t data[6];
-	uint8_t data_two;
+	uint8_t data;
 } Mpdu;
 
 /* Coded Virtual Channel Data Unit */
@@ -42,9 +45,9 @@ typedef struct {
 
 	/* Data unit zone */
 	uint8_t mpdu_header[2];
-	uint8_t mpdu_data[882];
+	uint8_t mpdu_data[MPDU_DATA_SIZE];
 
-	uint8_t reed_solomon[128];
+	uint8_t reed_solomon[VCDU_RS_SIZE];
 } Cvcdu;
 
 /* Channel Access Data Unit */
@@ -58,15 +61,19 @@ const uint8_t SYNCWORD[4];
 
 uint32_t vcdu_counter(const Cvcdu *p);
 int      vcdu_header_offset(const Cvcdu *p);
-void*    vcdu_header_ptr(Cvcdu *p);
 int      vcdu_id(const Cvcdu *p);
+void*    vcdu_mpdu_header_ptr(Cvcdu *p);
 int      vcdu_spacecraft(const Cvcdu *p);
 int      vcdu_vcid(const Cvcdu *p);
 
 int      mpdu_apid(const Mpdu *p);
+int      mpdu_data_len(const Mpdu *p);
+uint8_t* mpdu_data_ptr(const Mpdu *p);
 int      mpdu_grouping(const Mpdu *p);
+int      mpdu_has_sec_hdr(const Mpdu *p);
 uint32_t mpdu_msec(const Mpdu *p);
-uint16_t mpdu_len(const Mpdu *p);
+int      mpdu_raw_len(const Mpdu *p);
+int      mpdu_seq(const Mpdu *p);
 
 #endif
 
