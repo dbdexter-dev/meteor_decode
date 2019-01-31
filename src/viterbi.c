@@ -20,8 +20,8 @@ typedef struct state {
 typedef struct {
 	int cur_depth;
 	Transition trans[N_STATES][2];
-	Path *mem[N_STATES];
-	Path *tmp[N_STATES];
+	Path (*mem)[N_STATES];
+	Path (*tmp)[N_STATES];
 	SoftSource *src;
 } Viterbi;
 
@@ -34,6 +34,9 @@ static int  viterbi_decode(HardSource *v, uint8_t *out, size_t count);
 static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
 
 static unsigned int cost(int8_t x, int8_t y, int coding);
+
+static unsigned int _cost_lut[256][4];
+static int _initialized = 0;
 
 HardSource*
 viterbi_init(SoftSource *src)
@@ -50,16 +53,21 @@ viterbi_init(SoftSource *src)
 	v->src = src;
 	v->cur_depth = 0;
 
-	for (i=0; i<N_STATES; i++) {
-		v->mem[i] = calloc(1, sizeof(*v->mem[0]));
-		v->mem[i]->id = i;
-		v->mem[i]->cost = 0;
-		v->mem[i]->data[0] = (i >> 7) & 0x01;
+	v->mem = calloc(N_STATES, sizeof(*v->mem));
+	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
 
-		v->tmp[i] = calloc(1, sizeof(*v->tmp[0]));
+	if (!_initialized) {
+		for (i=-128; i<127; i++) {
+			_cost_lut[(uint8_t)i][0] = i + 128;
+			_cost_lut[(uint8_t)i][1] = abs(i-127);
+			_cost_lut[(uint8_t)i][2] = abs(i-127);
+		}
+	}
+
+
+	for (i=0; i<N_STATES; i++) {
+		v->mem[i]->id = i;
 		v->tmp[i]->id = i;
-		v->tmp[i]->cost = 0;
-		v->tmp[i]->data[0] = (i >> 7) & 0x01;
 	}
 
 	ret->_backend = v;
@@ -74,14 +82,10 @@ static int
 viterbi_deinit(HardSource *src)
 {
 	Viterbi *v = src->_backend;
-	unsigned int i;
-
-	for (i=0; i<N_STATES; i++) {
-		free(v->mem[i]);
-		free(v->tmp[i]);
-	}
 
 	v->src->close(v->src);
+	free(v->mem);
+	free(v->tmp);
 	free(v);
 	free(src);
 
@@ -97,7 +101,7 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 	int8_t in[2*MEM_DEPTH];
 	unsigned int mincost;
 	int8_t x, y;
-	Path *best, *tmp;
+	Path *best, (*tmp)[N_STATES];
 	Viterbi *self = src->_backend;
 
 	/* Len must be a multiple of 8 */
@@ -130,11 +134,10 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			}
 
 			/* Update the Viterbi decoder memory (swap tmp and mem) */
-			for (cur_state=0; cur_state<N_STATES; cur_state++) {
-				tmp = self->mem[cur_state];
-				self->mem[cur_state] = self->tmp[cur_state];
-				self->tmp[cur_state] = tmp;
-			}
+			tmp = self->mem;
+			self->mem = self->tmp;
+			self->tmp = tmp;
+
 			self->cur_depth++;
 		}
 
@@ -226,7 +229,7 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 /* Given an end state, find the previous state that gets to it with the least
  * effort */
 static int
-find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state)
+find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state)
 {
 	int start_state, prev;
 	uint8_t input;
@@ -286,17 +289,13 @@ compute_trans(Viterbi *v)
 	}
 
 }
-/* Cost function */
+/* Cost function 
+ * TODO consider using a lookup table for this */
 static unsigned int
 cost(int8_t x, int8_t y, int coding)
 {
-	const uint8_t mag = 128;
-	unsigned int error;
-
-	error = abs(x - (coding & 0x02 ? mag : -mag)) +
-			abs(y - (coding & 0x01 ? mag : -mag));
-
-	return error;
+	return _cost_lut[(uint8_t)x][coding & 0x02] +
+	       _cost_lut[(uint8_t)y][coding & 0x01];
 }
 
 static int

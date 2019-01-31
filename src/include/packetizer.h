@@ -1,5 +1,5 @@
-#ifndef LRPTDEC_PACKETPROC_H
-#define LRPTDEC_PACKETPROC_H
+#ifndef LRPTDEC_PACKETIZER_H
+#define LRPTDEC_PACKETIZER_H
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -8,7 +8,7 @@
 #include "source.h"
 
 #define NOISE_PERIOD 255
-#define MAX_PKT_SIZE (14 * MCU_SIZE)
+#define MAX_PKT_SIZE 1024
 
 typedef struct {
 	int seq;
@@ -29,6 +29,6 @@ typedef struct {
 PktProcessor* pkt_init(HardSource *src);
 void          pkt_deinit(PktProcessor *pp);
 
-int pkt_get_next(PktProcessor *pp, Segment *seg);
+int pkt_read(PktProcessor *pp, Segment *seg);
 
 #endif

@@ -5,6 +5,7 @@
 #define MIN(X, Y) (X < Y) ? X : Y
 
 #include <stdlib.h>
+#include <stdint.h>
 
 void  fatal(char *msg);
 char* gen_fname(int apid);
