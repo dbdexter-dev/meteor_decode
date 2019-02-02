@@ -29,7 +29,6 @@ typedef struct {
 static void update_header(BmpSink *bmp);
 static void write_strip(BmpSink *bmp);
 
-
 BmpSink*
 bmp_open(const char *fname)
 {
@@ -40,6 +39,7 @@ bmp_open(const char *fname)
 
 	hdr.magicnum[0] = 0x42;
 	hdr.magicnum[0] = 0x4d;
+	hdr.reserved = 0;
 	hdr.size = sizeof(Bmpheader) + sizeof(DIBheader);
 	hdr.pixoffset = sizeof(Bmpheader) + sizeof(DIBheader);
 
@@ -60,13 +60,17 @@ bmp_open(const char *fname)
 		fwrite(&dib, sizeof(dib), 1, fd);
 		ret = safealloc(sizeof(*ret));
 		ret->cur_col = 0;
+		ret->num_rows = 0;
 		ret->fd = fd;
 		memset(ret->strip, 0, sizeof(ret->strip));
+	} else {
+		fatal("Could not open output file");
 	}
 
 	return ret;
 }
 
+/* Finalize the BMP and free the BmpSink */
 void
 bmp_close(BmpSink *bmp)
 {
@@ -95,6 +99,9 @@ bmp_append_block(BmpSink *bmp, uint8_t block[8][8])
 		write_strip(bmp);
 		bmp->cur_col = 0;
 	}
+
+	update_header(bmp);
+	return 0;
 }
 
 /* Static functions {{{ */
@@ -108,6 +115,7 @@ update_header(BmpSink *bmp)
 
 	hdr.magicnum[0] = 0x42;
 	hdr.magicnum[1] = 0x4d;
+	hdr.reserved = 0;
 	hdr.size = sizeof(Bmpheader) + sizeof(DIBheader) + bmp->num_rows * PX_PER_ROW;
 	hdr.pixoffset = sizeof(Bmpheader) + sizeof(DIBheader);
 
@@ -115,7 +123,7 @@ update_header(BmpSink *bmp)
 	dib.width = PX_PER_ROW;
 	dib.height = bmp->num_rows;
 	dib.num_colorplanes = 1;
-	dib.bits_per_px = 8 * 3;
+	dib.bits_per_px = BMP_BPP;
 	dib.compression = 0;
 	dib.imgsize = bmp->num_rows * PX_PER_ROW;
 	dib.horiz_res = 0;
@@ -125,7 +133,7 @@ update_header(BmpSink *bmp)
 
 	cur_pos = ftell(bmp->fd);
 
-	rewind(bmp->fd);
+	fseek(bmp->fd, 0L, SEEK_SET);
 	fwrite(&hdr, sizeof(hdr), 1, bmp->fd);
 	fwrite(&dib, sizeof(dib), 1, bmp->fd);
 

@@ -15,19 +15,22 @@
 
 #define VCDU_RS_SIZE 128
 
-#define MPDU_SEC_HDR_SIZE 8
+#define MPDU_SEC_HDR_SIZE (sizeof(Timestamp))
 #define MPDU_HDR_SIZE 6
 #define MPDU_DATA_SIZE 882
 
-#define MCU_HDR_SIZE 6
+#define MCU_HDR_SIZE (sizeof(Timestamp)) + 6
+#define MCU_PER_MPDU 14
 
 /* Minimum code unit structure */
 typedef struct {
-	struct {
-		uint8_t day[2];
-		uint8_t msec[4];
-		uint8_t usec[2];
-	} timestamp;
+	uint8_t day[2];
+	uint8_t msec[4];
+	uint8_t usec[2];
+} Timestamp;
+
+typedef struct {
+	Timestamp timestamp;
 
 	uint8_t seq;
 	uint8_t scan_hdr[2];
@@ -37,11 +40,7 @@ typedef struct {
 } Mcu;
 
 typedef struct {
-	struct {
-		uint8_t day[2];
-		uint8_t msec[4];
-		uint8_t usec[2];
-	} timestamp;
+	Timestamp timestamp;
 
 	uint8_t data;
 } McuHK;

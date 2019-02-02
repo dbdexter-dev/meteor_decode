@@ -83,11 +83,9 @@ viterbi_deinit(HardSource *src)
 {
 	Viterbi *v = src->_backend;
 
-	v->src->close(v->src);
 	free(v->mem);
 	free(v->tmp);
 	free(v);
-	free(src);
 
 	return 0;
 }
@@ -236,7 +234,7 @@ find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state)
 	unsigned int tmpcost, mincost;
 
 	mincost = (unsigned int) -1;
-	
+
 	/* Compute the input necessary to get to end_state */
 	input = end_state->id >> (K-1);
 
@@ -289,7 +287,7 @@ compute_trans(Viterbi *v)
 	}
 
 }
-/* Cost function 
+/* Cost function
  * TODO consider using a lookup table for this */
 static unsigned int
 cost(int8_t x, int8_t y, int coding)

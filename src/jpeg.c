@@ -5,8 +5,8 @@
 #include "utils.h"
 
 static int  get_quant(int quality, int x, int y);
-static void dct_inverse(int8_t dst[8][8], int16_t src[8][8]);
-static void dequantize(int16_t dst[8][8], int8_t src[8][8], int quality);
+static void dct_inverse(int16_t dst[8][8], int16_t src[8][8]);
+static void dequantize(int16_t dst[8][8], int16_t src[8][8], int quality);
 
 /* Quantization table, standard 50% quality JPEG */
 static const int _quant[8][8] =
@@ -42,9 +42,9 @@ jpeg_init()
 	}
 }
 
-/* Probably the exact opposite of pkt_get_next */
+/* Decode an 8x8 block in-place */
 int
-jpeg_decode(int8_t src[8][8], int quality)
+jpeg_decode(uint8_t dst[8][8], int16_t src[8][8], int quality)
 {
 	int i, j;
 	int16_t tmp[8][8];
@@ -52,19 +52,21 @@ jpeg_decode(int8_t src[8][8], int quality)
 	dequantize(tmp, src, quality);
 	dct_inverse(src, tmp);
 
-	/* Renormalize from (-128, 127) to (0, 255) */
+	/* Renormalize from (-512, 511) to (0, 255) */
 	for (i=0; i<8; i++) {
 		for (j=0; j<8; j++) {
-			src[i][j] += 128;
+			dst[i][j] = (src[i][j]*8/10) + 128;
 		}
 	}
+
+	return 0;
 }
 
-/* Static functions {{{*/
+/* Static functions {{{ */
 /* Entrywise product with the quantization matrix. Might return values higher
  * than 255, so int16_t it is */
 static void
-dequantize(int16_t dst[8][8], int8_t src[8][8], int quality)
+dequantize(int16_t dst[8][8], int16_t src[8][8], int quality)
 {
 	int i, j;
 
@@ -77,22 +79,21 @@ dequantize(int16_t dst[8][8], int8_t src[8][8], int quality)
 
 /* In-place inverse discrete cosine transform on an 8x8 src */
 static void
-dct_inverse(int8_t dst[8][8], int16_t src[8][8])
+dct_inverse(int16_t dst[8][8], int16_t src[8][8])
 {
 	int i, j, u, v;
-	float buf[8][8];
-
-	memset(buf, 0, sizeof(buf));
+	float tmp;
 
 	for (i=0; i<8; i++) {
 		for (j=0; j<8; j++) {
+			tmp = 0;;
 			for (u=0; u<8; u++) {
 				for (v=0; v<8; v++) {
-					buf[i][j] += _alpha_lut[u] * _alpha_lut[v] * src[i][j] *
+					tmp += _alpha_lut[u] * _alpha_lut[v] * src[u][v] *
 					             _cos_lut[i][u] * _cos_lut[j][v];
 				}
 			}
-			dst[i][j] = MIN(round(buf[i][j] / 4), 255);
+			dst[i][j] = MIN(round(tmp / 4), 255);
 		}
 	}
 }

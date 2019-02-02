@@ -24,11 +24,11 @@ typedef struct {
 	uint8_t cadu[sizeof(Cadu)];
 	ReedSolomon *rs;
 	HardSource *src;
-} PktProcessor;
+} Packetizer;
 
-PktProcessor* pkt_init(HardSource *src);
-void          pkt_deinit(PktProcessor *pp);
+Packetizer* pkt_init(HardSource *src);
+void          pkt_deinit(Packetizer *pp);
 
-int pkt_read(PktProcessor *pp, Segment *seg);
+int pkt_read(Packetizer *pp, Segment *seg);
 
 #endif

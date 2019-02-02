@@ -15,10 +15,10 @@ static int  retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs);
 static uint8_t _noise[NOISE_PERIOD];
 static int     _initialized = 0;
 
-PktProcessor*
+Packetizer*
 pkt_init(HardSource *src)
 {
-	PktProcessor *ret;
+	Packetizer *ret;
 
 	if (!_initialized) {
 		compute_noise();
@@ -33,21 +33,20 @@ pkt_init(HardSource *src)
 }
 
 void
-pkt_deinit(PktProcessor *pp)
+pkt_deinit(Packetizer *pp)
 {
 	if (!pp) {
 		return;
 	}
 
 	rs_deinit(pp->rs);
-	pp->src->close(pp->src);
 	free(pp);
 }
 
 /* Retrieve the next segment.
  * "The ugliest function ever written. Period." */
 int
-pkt_read(PktProcessor *self, Segment *seg)
+pkt_read(Packetizer *self, Segment *seg)
 {
 	Cvcdu *vcdu;
 	Mpdu *mpdu, frag_hdr;
@@ -86,7 +85,7 @@ pkt_read(PktProcessor *self, Segment *seg)
 		return -1;
 	}
 
-	/* Check whether the header is fragmented across multiple VCDUs. If it is, 
+	/* Check whether the header is fragmented across multiple VCDUs. If it is,
 	 * reconstruct it locally before trying to parse it */
 	if ((uint8_t*)mpdu + MPDU_HDR_SIZE > (uint8_t*)vcdu->mpdu_data + MPDU_DATA_SIZE) {
 		/* Get the first fragment from the end of the current packet */
@@ -115,7 +114,7 @@ pkt_read(PktProcessor *self, Segment *seg)
 		seg->has_sec_hdr = mpdu_has_sec_hdr(&frag_hdr);
 
 		/* "Fake" the mpdu beginning  as if it were before the beginning of the
-		 * actual mpdu. This is needed because of alignment issues when 
+		 * actual mpdu. This is needed because of alignment issues when
 		 * computing the next header's position later on */
 		data_ptr = (uint8_t*)vcdu->mpdu_data + (MPDU_HDR_SIZE - bytes_out);
 		mpdu = (Mpdu*)((uint8_t*)vcdu->mpdu_data - (MPDU_HDR_SIZE - bytes_out));
@@ -149,12 +148,12 @@ pkt_read(PktProcessor *self, Segment *seg)
 			seg->len = 0;
 			return -1;
 		} else if (rs_fix_count == -2) {
-			seg->len = 0; 
+			seg->len = 0;
 			return 0;
 		}
 
 		/* Copy the bytes we were missing */
-		memcpy(seg->data + bytes_out, vcdu->mpdu_data, 
+		memcpy(seg->data + bytes_out, vcdu->mpdu_data,
 		       MIN(MPDU_DATA_SIZE, seg->len - bytes_out));
 
 		/* Huge packet that spans more than two VCDUs... possible? Maybe,
@@ -174,14 +173,14 @@ pkt_read(PktProcessor *self, Segment *seg)
 				return 0;
 			}
 
-			memcpy(seg->data + bytes_out, vcdu->mpdu_data, 
+			memcpy(seg->data + bytes_out, vcdu->mpdu_data,
 			       MIN(MPDU_DATA_SIZE, seg->len - bytes_out));
 		}
 	} else {
 		/* Copy the data from the MPDU and update next_header to point to the
 		 * next header in the same VCDU */
 		memcpy(seg->data, mpdu_data_ptr(mpdu), seg->len);
-		self->next_header = (uint8_t*)mpdu + mpdu_raw_len(mpdu) + 
+		self->next_header = (uint8_t*)mpdu + mpdu_raw_len(mpdu) +
 		                    MPDU_HDR_SIZE + 1;
 		if ((uint8_t*)self->next_header >= (uint8_t*)vcdu->mpdu_data + MPDU_DATA_SIZE) {
 			self->next_header = NULL;
@@ -213,7 +212,7 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 		/* Unfixable frame */
 		return -1;
 	}
-
+	return rs_fix_count;
 }
 
 /* XOR with the precomputed output of the LFSR */

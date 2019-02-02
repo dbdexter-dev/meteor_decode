@@ -1,8 +1,8 @@
 #ifndef LRPTDEC_UTILS_H
 #define LRPTDEC_UTILS_H
 
-#define MAX(X, Y) (X > Y) ? X : Y
-#define MIN(X, Y) (X < Y) ? X : Y
+#define MAX(X, Y) ((X > Y) ? X : Y)
+#define MIN(X, Y) ((X < Y) ? X : Y)
 
 #include <stdlib.h>
 #include <stdint.h>

@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include "bmp.h"
+#include "compositor.h"
 #include "correlator.h"
 #include "file.h"
+#include "hexdump.h"
+#include "huffman.h"
 #include "options.h"
 #include "packetizer.h"
 #include "reedsolomon.h"
@@ -16,8 +19,10 @@ main(int argc, char *argv[])
 	int c;
 	SoftSource *softsamples, *correlator;
 	HardSource *viterbi;
+	Packetizer *pp;
+	BmpSink *bmp;
+	Compositor *comp;
 	Segment seg;
-	PktProcessor *pp;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
 	/* Command-line changeable variables {{{*/
 	char *out_fname, *in_fname;
@@ -62,33 +67,34 @@ main(int argc, char *argv[])
 	}
 
 
-	/* Let the chain begin! */
-/*	softsamples = src_soft_open(in_fname, 8);*/
-/*	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));*/
-/*	correlator = correlator_init_soft(softsamples, encoded_syncword);*/
-/*	viterbi = viterbi_init(correlator);*/
-/*	pp = pkt_init(viterbi);*/
+	/* Let the dance begin! */
+	softsamples = src_soft_open(in_fname, 8);
+	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
+	correlator = correlator_init_soft(softsamples, encoded_syncword);
+	viterbi = viterbi_init(correlator);
+	pp = pkt_init(viterbi);
 
-	uint8_t whiteblk[8][8];
-	for (int i=0; i<8; i++)
-		for (int j=0; j<8; j++)
-			whiteblk[i][j] = 0x80;
+	bmp = bmp_open("/tmp/test.bmp");
+	comp = comp_init(bmp);
 
-	BmpSink *bmp = bmp_open("/tmp/test.bmp");
-	bmp_append_block(bmp, whiteblk);
-	bmp_close(bmp);
-	
-
-
-/*	while(pkt_read(pp, &seg)){*/
-/*		if (seg.len > 0) {*/
-/*			log("seq=%d len=%d APID=%d\n", seg.seq, seg.len, seg.apid);*/
+	huffman_init();
+	while(pkt_read(pp, &seg)){
+		if (seg.len > 0) {
+			log("seq=%d len=%d APID=%d\n", seg.seq, seg.len, seg.apid);
 /*			hexdump("Data", seg.data, seg.len);*/
-/*		}*/
-/*	}*/
+			if (seg.apid == 64) {
+				comp_compose(comp, &seg);
+			}
+		}
+	}
 
-	/* Closing a link closes all the "sub-contractors" */
-/*	pkt_deinit(pp);*/
+	bmp_close(bmp);
+
+	comp_deinit(comp);
+	pkt_deinit(pp);
+	viterbi->close(viterbi);
+	correlator->close(correlator);
+	softsamples->close(softsamples);
 
 	if (free_fname_on_exit) {
 		free(out_fname);

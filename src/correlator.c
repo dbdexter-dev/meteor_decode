@@ -95,7 +95,6 @@ correlator_deinit_soft(SoftSource *src)
 	Correlator *c = src->_backend;
 
 	free(c->patterns);
-	c->src->close(c->src);
 	free(c);
 	free(src);
 

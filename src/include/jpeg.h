@@ -5,6 +5,6 @@
 #include "packet.h"
 
 void jpeg_init();
-int  jpeg_block_decode(uint8_t dst[8][8], const Mcu *mcu);
+int  jpeg_decode(uint8_t dst[8][8], int16_t src[8][8], int quality);
 
 #endif

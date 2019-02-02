@@ -200,7 +200,7 @@ deinterleave(uint8_t *out, const uint8_t *in, int step, int delta, size_t len)
 	}
 }
 
-static void 
+static void
 interleave(uint8_t *out, const uint8_t *in, int step, int delta, size_t len)
 {
 	size_t i;

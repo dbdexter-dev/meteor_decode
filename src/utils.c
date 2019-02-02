@@ -70,7 +70,7 @@ timeofday(unsigned int msec)
 	hr =  msec / 1000 / 60 / 60 % 24;
 
 	sprintf(_time_of_day, "%02d:%02d:%02d.%03d", hr, min, sec, ms);
-	
+
 	return _time_of_day;
 }
 

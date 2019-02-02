@@ -36,7 +36,7 @@ vcdu_id(const Cvcdu *p)
 	return p->info[1] & 0x3F;
 }
 
-int 
+int
 vcdu_spacecraft(const Cvcdu *p)
 {
 	return (p->info[0] & 0x3F) << 2 | (p->info[1] >> 5);
@@ -69,7 +69,7 @@ mpdu_data_len(const Mpdu *p)
 uint8_t*
 mpdu_data_ptr(const Mpdu *p)
 {
-	return (uint8_t*)p + MPDU_HDR_SIZE; 
+	return (uint8_t*)p + MPDU_HDR_SIZE;
 }
 
 int
