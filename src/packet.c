@@ -84,6 +84,12 @@ mpdu_has_sec_hdr(const Mpdu *p)
 	return p->id[0] & 0x08;
 }
 
+uint32_t
+mpdu_msec(const Timestamp *t)
+{
+	return t->msec[0] << 24 | t->msec[1] << 16 | t->msec[2] << 8 | t->msec[3];
+}
+
 int
 mpdu_raw_len(const Mpdu *p)
 {
@@ -98,9 +104,9 @@ mpdu_seq(const Mpdu *p)
 
 /* MCU-oriented functions */
 void*
-mcu_data_ptr(const Mcu *p)
+mcu_data_ptr(Mcu *p)
 {
-	return (void*)&p->data;
+	return &p->data;
 }
 
 void*
@@ -109,11 +115,16 @@ mcu_hk_data_ptr(const McuHK *p)
 	return (void*)&p->data;
 }
 
-
 int
 mcu_quant_table(const Mcu *p)
 {
 	return p->scan_hdr[0];
+}
+
+int
+mcu_seq(const Mcu *p)
+{
+	return p->seq;
 }
 
 int

@@ -17,6 +17,6 @@ typedef struct {
 
 BmpSink *bmp_open(const char *fname);
 void     bmp_close(BmpSink *bmp);
-int      bmp_append_block(BmpSink *bmp, uint8_t block[8][8]);
+int      bmp_append(BmpSink *bmp, const uint8_t block[8][8]);
 
 #endif

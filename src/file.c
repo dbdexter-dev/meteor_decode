@@ -44,11 +44,11 @@ src_soft_read(SoftSource *self, int8_t *buf, size_t count) {
 	FileSrc *src = self->_backend;
 
 	if (!buf) {
-		fseek(src->fd, count, SEEK_CUR); 
+		fseek(src->fd, count, SEEK_CUR);
 		return 0;
 	}
 
-
+	samples_read = 0;
 	if (src->bps == 8) {
 		samples_read = fread(buf, sizeof(*buf), count, src->fd);
 	} else {

@@ -14,7 +14,7 @@ typedef struct {
 	int seq;
 	int apid;
 	int len;
-	int has_sec_hdr;
+	unsigned int timestamp;
 
 	uint8_t data[MAX_PKT_SIZE];
 } Segment;

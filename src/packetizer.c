@@ -53,6 +53,7 @@ pkt_read(Packetizer *self, Segment *seg)
 	uint8_t *data_ptr;
 	int rs_fix_count;
 	int bytes_out;
+	int timestamp_present;
 
 	vcdu = &(((Cadu*)self->cadu)->cvcdu);
 
@@ -79,7 +80,7 @@ pkt_read(Packetizer *self, Segment *seg)
 	}
 
 	/* vcdu_mpdu_header_ptr might return NULL, especially when corrputed packets
-	 * slip through:handle that case */
+	 * slip through: handle that case */
 	if (!mpdu) {
 		self->next_header = NULL;
 		return -1;
@@ -111,7 +112,7 @@ pkt_read(Packetizer *self, Segment *seg)
 		seg->len = mpdu_data_len(&frag_hdr);
 		seg->apid = mpdu_apid(&frag_hdr);
 		seg->seq = mpdu_seq(&frag_hdr);
-		seg->has_sec_hdr = mpdu_has_sec_hdr(&frag_hdr);
+		timestamp_present = mpdu_has_sec_hdr(&frag_hdr);
 
 		/* "Fake" the mpdu beginning  as if it were before the beginning of the
 		 * actual mpdu. This is needed because of alignment issues when
@@ -122,10 +123,11 @@ pkt_read(Packetizer *self, Segment *seg)
 		seg->len = mpdu_data_len(mpdu);
 		seg->apid = mpdu_apid(mpdu);
 		seg->seq = mpdu_seq(mpdu);
-		seg->has_sec_hdr = mpdu_has_sec_hdr(mpdu);
+		timestamp_present = mpdu_has_sec_hdr(mpdu);
 
 		data_ptr = mpdu_data_ptr(mpdu);
 	}
+	seg->timestamp = 0;
 
 	/* This might happen when RS thinks the packet is good but it really isn't */
 	if (seg->len > MAX_PKT_SIZE) {
@@ -134,11 +136,14 @@ pkt_read(Packetizer *self, Segment *seg)
 		return -1;
 	}
 
+
 	/* Check whether the data is fragmented across multiple VCDUs */
 	if (data_ptr + seg->len > (uint8_t*)vcdu->mpdu_data + MPDU_DATA_SIZE) {
 		/* Packet is fragmented: write what we have and grab a new VCDU */
 		bytes_out = MPDU_DATA_SIZE - (data_ptr - vcdu->mpdu_data);
-		memcpy(seg->data, data_ptr, bytes_out);
+		if (bytes_out > 0) {
+			memcpy(seg->data, data_ptr, bytes_out);
+		}
 
 		rs_fix_count = retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs);
 
@@ -153,8 +158,12 @@ pkt_read(Packetizer *self, Segment *seg)
 		}
 
 		/* Copy the bytes we were missing */
-		memcpy(seg->data + bytes_out, vcdu->mpdu_data,
-		       MIN(MPDU_DATA_SIZE, seg->len - bytes_out));
+		data_ptr = vcdu->mpdu_data;
+		if (bytes_out < 0) {
+			data_ptr -= bytes_out;
+			bytes_out = 0;
+		}
+		memcpy(seg->data + bytes_out, data_ptr, seg->len - bytes_out);
 
 		/* Huge packet that spans more than two VCDUs... possible? Maybe,
 		 * haven't found anything saying this isn't possible in the docs */
@@ -178,13 +187,22 @@ pkt_read(Packetizer *self, Segment *seg)
 		}
 	} else {
 		/* Copy the data from the MPDU and update next_header to point to the
-		 * next header in the same VCDU */
-		memcpy(seg->data, mpdu_data_ptr(mpdu), seg->len);
+		 * next header in the current VCDU (or null if that would be past the
+		 * end) */
+		memcpy(seg->data, data_ptr, seg->len);
 		self->next_header = (uint8_t*)mpdu + mpdu_raw_len(mpdu) +
 		                    MPDU_HDR_SIZE + 1;
 		if ((uint8_t*)self->next_header >= (uint8_t*)vcdu->mpdu_data + MPDU_DATA_SIZE) {
 			self->next_header = NULL;
 		}
+	}
+
+	/* If the timestamp is present, parse it and remove it from the data we'll
+	 * be returning */
+	if (timestamp_present) {
+		seg->timestamp = mpdu_msec((Timestamp*)seg->data);
+		memmove(seg->data, seg->data + MPDU_SEC_HDR_SIZE, seg->len);
+		seg->len -= MPDU_SEC_HDR_SIZE;
 	}
 
 	return seg->len;
@@ -210,7 +228,7 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 
 	if(rs_fix_count < 0) {
 		/* Unfixable frame */
-		return -1;
+		return 0;
 	}
 	return rs_fix_count;
 }

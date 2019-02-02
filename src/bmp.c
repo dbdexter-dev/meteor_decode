@@ -85,7 +85,7 @@ bmp_close(BmpSink *bmp)
 
 /* Queue up a block for writing */
 int
-bmp_append_block(BmpSink *bmp, uint8_t block[8][8])
+bmp_append(BmpSink *bmp, const uint8_t block[8][8])
 {
 	int i, j;
 

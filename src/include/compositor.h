@@ -6,9 +6,10 @@
 
 typedef struct {
 	BmpSink *bmp;
+	int next_mcu_seq;
 } Compositor;
 
-Compositor* comp_init(BmpSink *s);
+Compositor* comp_init(BmpSink *s, int init_offset);
 int         comp_compose(Compositor *c, const Segment *seg);
 void        comp_deinit(Compositor *c);
 

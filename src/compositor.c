@@ -9,7 +9,7 @@
 static void unzigzag(int16_t block[8][8]);
 
 /* 8x8 reverse zigzag pattern */
-const int _zigzag_lut[64] = 
+static const int _zigzag_lut[64] =
 {
 	0,  1,  8,  16, 9,  2,  3,  10,
 	17, 24, 32, 25, 18, 11, 4,  5,
@@ -21,20 +21,23 @@ const int _zigzag_lut[64] =
 	53, 60, 61, 54, 47, 55, 62, 63
 };
 
+static const uint8_t _black_square[8][8] = { 0 };
+
 
 Compositor*
-comp_init(BmpSink *s)
+comp_init(BmpSink *s, int init_offset)
 {
 	Compositor *ret;
 
 	ret = safealloc(sizeof(*ret));
 	ret->bmp = s;
+	ret->next_mcu_seq = init_offset;
 	jpeg_init();
 
 	return ret;
 }
 
-void 
+void
 comp_deinit(Compositor *self)
 {
 	free(self);
@@ -44,30 +47,46 @@ comp_deinit(Compositor *self)
 int
 comp_compose(Compositor *self, const Segment *seg)
 {
+	Mcu *mcu;
 	int i;
-	int jpeg_quality;
+	int jpeg_quality, seq_delta;
 	const uint8_t *raw_data;
 	int16_t decoded_strip[MCU_PER_MPDU][8][8];
-	uint8_t unsigned_tmp[8][8];
+	uint8_t tmp[8][8];
 
-	jpeg_quality = mcu_quality_factor((Mcu*)seg->data);
-	if (seg->has_sec_hdr) {
-		raw_data = seg->data + MCU_HDR_SIZE;
-	} else {
-		raw_data = seg->data;
+	/* len=0 means packet wasn't properly decoded: pad the bmp with black pixels
+	 * for the length of a partial packet and exit */
+	if (!seg->len) {
+		for (i=0; i<MCU_PER_PP; i++) {
+			bmp_append(self->bmp, _black_square);
+		}
+		return 0;
 	}
 
-	/* Decode the whole strip */
-	printf("Composing %d bytes\n", seg->len - MCU_HDR_SIZE);
+	mcu = (Mcu*)seg->data;
+	jpeg_quality = mcu_quality_factor(mcu);
+	raw_data = mcu_data_ptr(mcu);
+	seq_delta = (mcu_seq(mcu) - self->next_mcu_seq + MCU_PER_PP) % MCU_PER_PP;
+
+	if (seq_delta) {
+		printf("Lost %d MCUs\n", seq_delta);
+	}
+	/* Realign with black squares to account for the lost MCUs */
+	for (i = (seq_delta + MCU_PER_PP) % MCU_PER_PP; i>0; i--) {
+		bmp_append(self->bmp, _black_square);
+	}
+
+	/* Huffman-decode the whole strip */
 	huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU);
 
 	/* Un-zigzag, decompress, and write out each block */
-	/* TODO handle missing strips/blocks */
 	for (i=0; i<MCU_PER_MPDU; i++) {
 		unzigzag(decoded_strip[i]);
-		jpeg_decode(unsigned_tmp, decoded_strip[i], jpeg_quality);
-		bmp_append_block(self->bmp, unsigned_tmp);
+		jpeg_decode(tmp, decoded_strip[i], jpeg_quality);
+		bmp_append(self->bmp, tmp);
 	}
+
+	self->next_mcu_seq = (mcu_seq(mcu) + MCU_PER_MPDU) % (MCU_PER_PP);
 
 	return 0;
 }

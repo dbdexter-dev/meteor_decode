@@ -99,7 +99,6 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 				ac_info = (ac_info << 1) | get_bits(src+byte_idx, bit_idx, 1);
 				bit_idx++;
 				if (ac_info > 65535) {
-					fatal("Invalid AC code");
 					return -1;
 				}
 			}

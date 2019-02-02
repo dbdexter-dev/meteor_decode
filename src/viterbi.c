@@ -12,7 +12,6 @@ typedef struct {
 } Transition;
 
 typedef struct state {
-	int id;
 	unsigned int cost;
 	uint8_t data[MEM_DEPTH+1];
 } Path;
@@ -26,7 +25,7 @@ typedef struct {
 } Viterbi;
 
 static void compute_trans(Viterbi *v);
-static int  find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state);
+static int  find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state, int id);
 static int  parity(uint8_t x);
 static int  write_bits(const uint8_t *bits, size_t count, uint8_t *out);
 static int  viterbi_deinit(HardSource *v);
@@ -62,12 +61,6 @@ viterbi_init(SoftSource *src)
 			_cost_lut[(uint8_t)i][1] = abs(i-127);
 			_cost_lut[(uint8_t)i][2] = abs(i-127);
 		}
-	}
-
-
-	for (i=0; i<N_STATES; i++) {
-		v->mem[i]->id = i;
-		v->tmp[i]->id = i;
 	}
 
 	ret->_backend = v;
@@ -128,7 +121,7 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 
 			/* For each state, find the path of least resistance to it */
 			for (cur_state = 0; cur_state < N_STATES; cur_state++) {
-				find_best(self, x, y, self->tmp[cur_state]);
+				find_best(self, x, y, self->tmp[cur_state], cur_state);
 			}
 
 			/* Update the Viterbi decoder memory (swap tmp and mem) */
@@ -227,7 +220,7 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 /* Given an end state, find the previous state that gets to it with the least
  * effort */
 static int
-find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state)
+find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state, int id)
 {
 	int start_state, prev;
 	uint8_t input;
@@ -236,11 +229,11 @@ find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state)
 	mincost = (unsigned int) -1;
 
 	/* Compute the input necessary to get to end_state */
-	input = end_state->id >> (K-1);
+	input = id >> (K-1);
 
 
 	/* Try with candidate #1 */
-	start_state = ((end_state->id << 1) & (N_STATES - 1)) | 0x00;
+	start_state = ((id << 1) & (N_STATES - 1)) | 0x00;
 	tmpcost = cost(x, y, self->trans[start_state][input].output);
 	if (self->mem[start_state]->cost + tmpcost < MAX_COST) {
 		mincost = self->mem[start_state]->cost + tmpcost;
@@ -248,7 +241,7 @@ find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state)
 	}
 
 	/* Try with candidate #2 */
-	start_state = ((end_state->id << 1) & (N_STATES - 1)) | 0x01;
+	start_state = ((id << 1) & (N_STATES - 1)) | 0x01;
 	tmpcost = cost(x, y, self->trans[start_state][input].output);
 	if (self->mem[start_state]->cost + tmpcost < mincost) {
 		mincost = self->mem[start_state]->cost + tmpcost;
@@ -287,8 +280,8 @@ compute_trans(Viterbi *v)
 	}
 
 }
-/* Cost function
- * TODO consider using a lookup table for this */
+
+/* Cost function */
 static unsigned int
 cost(int8_t x, int8_t y, int coding)
 {

@@ -10,9 +10,9 @@
 #define G2 0x5B
 
 #define N_STATES (1 << K)
-#define MEM_DEPTH (5 * N_STATES)
+#define MEM_DEPTH (N_STATES)
 #define MAX_COST (MEM_DEPTH * 512)
-#define BACKTRACK_DEPTH ((MEM_DEPTH - N_STATES) & 0xFFFFFFF8)
+#define BACKTRACK_DEPTH ((N_STATES/2) & 0xFFFFFFF8)
 #define VITERBI_DELAY (MEM_DEPTH - BACKTRACK_DEPTH)
 
 HardSource* viterbi_init(SoftSource *src);
