@@ -1,4 +1,5 @@
+**/*.pdf
 **/tags
 **/*.o
-src/lrptdec
+src/meteor_decode
 **/cachegrind.out*
