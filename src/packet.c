@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "packet.h"
 
-static int vcdu_header_present(const Cvcdu *p);
+static int vcdu_header_present(const Vcdu *p);
 
 /* From packet.h */
 const uint8_t SYNCWORD[] = {0x1a, 0xcf, 0xfc, 0x1d};
@@ -10,13 +10,13 @@ const uint8_t SYNCWORD[] = {0x1a, 0xcf, 0xfc, 0x1d};
 
 /* VCDU-oriented functions */
 int
-vcdu_header_offset(const Cvcdu *p)
+vcdu_header_offset(const Vcdu *p)
 {
 	return (p->mpdu_header[0] & 0x07) << 8 | p->mpdu_header[1];
 }
 
 void*
-vcdu_mpdu_header_ptr(Cvcdu *p)
+vcdu_mpdu_header_ptr(Vcdu *p)
 {
 	if(vcdu_header_present(p)) {
 		return (uint8_t*)&p->mpdu_data + vcdu_header_offset(p);
@@ -25,25 +25,25 @@ vcdu_mpdu_header_ptr(Cvcdu *p)
 }
 
 uint32_t
-vcdu_counter(const Cvcdu *p)
+vcdu_counter(const Vcdu *p)
 {
 	return (p->counter[0] << 16) | (p->counter[1] << 8) | (p->counter[2]);
 }
 
 int
-vcdu_id(const Cvcdu *p)
+vcdu_id(const Vcdu *p)
 {
 	return p->info[1] & 0x3F;
 }
 
 int
-vcdu_spacecraft(const Cvcdu *p)
+vcdu_spacecraft(const Vcdu *p)
 {
 	return (p->info[0] & 0x3F) << 2 | (p->info[1] >> 5);
 }
 
 int
-vcdu_vcid(const Cvcdu *p)
+vcdu_vcid(const Vcdu *p)
 {
 	return p->info[1] & 0x3F;
 }
@@ -149,7 +149,7 @@ mcu_quality_factor(const Mcu *p)
 
 /* Static functions {{{*/
 static int
-vcdu_header_present(const Cvcdu *p)
+vcdu_header_present(const Vcdu *p)
 {
 	return !(p->mpdu_header[0] >> 3);
 }

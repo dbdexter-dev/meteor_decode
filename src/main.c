@@ -15,7 +15,7 @@
 int
 main(int argc, char *argv[])
 {
-	int c;
+	int c, count;
 	SoftSource *softsamples, *correlator;
 	HardSource *viterbi;
 	Packetizer *pp;
@@ -23,6 +23,7 @@ main(int argc, char *argv[])
 	Compositor *comp;
 	Segment seg;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+
 	/* Command-line changeable variables {{{*/
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
@@ -75,17 +76,19 @@ main(int argc, char *argv[])
 	bmp = bmp_open(out_fname);
 	comp = comp_init(bmp, 0);
 
-	huffman_init();
+	count = 0;
 	while(pkt_read(pp, &seg)){
+		count++;
 		if (seg.len > 0) {
-/*			log("seq=%d len=%d APID=%d, tstamp=%x\n", seg.seq, seg.len,*/
-/*			    seg.apid, seg.timestamp);*/
+/*			printf("Packet #%d\n", count);*/
+			log("seq=%d len=%d APID=%d, tstamp=%x\n", seg.seq, seg.len,
+			    seg.apid, seg.timestamp);
 /*			hexdump("Data", seg.data, seg.len);*/
 			if (seg.apid == 68) {
 				comp_compose(comp, &seg);
 			}
 		} else {
-			printf("VCDU lost\n");
+			log("VCDU lost\n");
 		}
 	}
 

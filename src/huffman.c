@@ -11,11 +11,12 @@ static int      get_dc_cat(uint16_t codeword);
 static int      get_ac_cat(uint16_t codeword);
 static uint32_t get_bits(const uint8_t *ptr, int bit_offset, int nbits);
 
+static uint8_t   _ac_table[65535];
 static const int _cat_prefix_size[12] = {2, 3, 3, 3, 3, 3, 4, 5, 6, 7, 8, 9};
 static const int _max_range[12] = {0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047};
 static const int _min_range[12] = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
 static const int _compressed_table_counts[16] = {0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 125};
-static const int _compressed_table[168] =
+static const int _compressed_table[162] =
 {
 	1, 2,
 	3,
@@ -38,8 +39,6 @@ static const int _compressed_table[168] =
 	212, 213, 214, 215, 216, 217, 218, 225, 226, 227, 228, 229, 230, 231, 232,
 	233, 234, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250
 };
-
-static uint8_t   _ac_table[65535];
 
 void
 huffman_init()
@@ -140,7 +139,7 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 			}
 		}
 	}
-	return 0;
+	return byte_idx;
 }
 
 /* Static functions {{{ */
@@ -154,7 +153,7 @@ get_bits(const uint8_t *ptr, int bit_offset, int nbits)
 	msk = (1<<nbits)-1;
 
 	i = 0;
-	while (bit_offset >= 8) {
+	while (bit_offset > 7) {
 		i++;
 		bit_offset -= 8;
 	}

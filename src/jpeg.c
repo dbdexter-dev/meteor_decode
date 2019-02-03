@@ -19,27 +19,19 @@ static const int _quant[8][8] =
 	{24, 35, 55, 64, 81, 104,113,92},
 	{49, 64, 78, 87, 103,121,120,101},
 	{72, 92, 95, 98, 112,100,103,99}
-/*	{16,12,14,14,18,24,49,72},*/
-/*	{11,12,13,17,22,35,64,92},*/
-/*	{10,14,16,22,37,55,78,95},*/
-/*	{16,19,24,29,56,64,87,98},*/
-/*	{24,26,40,51,68,81,103,112},*/
-/*	{40,58,57,87,109,104,121,100},*/
-/*	{51,68,69,80,103,113,120,103},*/
-/*	{61,55,56,62,77,92,101,99},*/
-
 };
 
 static float _cos_lut[8][8];
 static float _alpha_lut[8];
 static int _initialized = 0;
 
+
+/* Initialze cosine/alpha lookup tables */
 void
 jpeg_init()
 {
 	int i, j;
 
-	/* Initialze cosine/alpha lookup tables */
 	if (!_initialized) {
 		for (i=0; i<8; i++) {
 			_alpha_lut[i] = (i == 0 ? 1/M_SQRT2 : 1);
@@ -61,10 +53,10 @@ jpeg_decode(uint8_t dst[8][8], int16_t src[8][8], int quality)
 	dequantize(tmp, src, quality);
 	dct_inverse(src, tmp);
 
-	/* Renormalize from (-512, 511) to (0, 255) */
+	/* Renormalize to (0, 255) */
 	for (i=0; i<8; i++) {
 		for (j=0; j<8; j++) {
-			dst[i][j] = MAX(0, (src[i][j]) + 128);
+			dst[i][j] = MIN(255, MAX(0, src[i][j] + 128));
 		}
 	}
 
@@ -99,7 +91,7 @@ dct_inverse(int16_t dst[8][8], int16_t src[8][8])
 			for (u=0; u<8; u++) {
 				for (v=0; v<8; v++) {
 					tmp += _alpha_lut[u] * _alpha_lut[v] * src[u][v] *
-					             _cos_lut[i][u] * _cos_lut[j][v];
+					       _cos_lut[i][u] * _cos_lut[j][v];
 				}
 			}
 			dst[i][j] = round(tmp / 4);
@@ -119,6 +111,6 @@ get_quant(int quality, int x, int y)
 		compr_ratio = 200 - 2*quality;
 	}
 
-	return MAX(1, round(_quant[x][y] * (float)compr_ratio/100));
+	return MAX(1, round(_quant[x][y] * compr_ratio/100.0));
 }
 /*}}}*/

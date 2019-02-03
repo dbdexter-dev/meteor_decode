@@ -1,3 +1,6 @@
+/**
+ * Miscellaneous self-contained functions
+ */
 #ifndef LRPTDEC_UTILS_H
 #define LRPTDEC_UTILS_H
 

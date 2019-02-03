@@ -85,7 +85,7 @@ bmp_close(BmpSink *bmp)
 
 /* Queue up a block for writing */
 int
-bmp_append(BmpSink *bmp, const uint8_t block[8][8])
+bmp_append(BmpSink *bmp, uint8_t block[8][8])
 {
 	int i, j;
 
@@ -94,13 +94,14 @@ bmp_append(BmpSink *bmp, const uint8_t block[8][8])
 			bmp->strip[i][bmp->cur_col+j] = block[i][j];
 		}
 	}
+
 	bmp->cur_col += 8;
 	if (bmp->cur_col >= PX_PER_ROW) {
 		write_strip(bmp);
 		bmp->cur_col = 0;
+		update_header(bmp);
 	}
 
-	update_header(bmp);
 	return 0;
 }
 

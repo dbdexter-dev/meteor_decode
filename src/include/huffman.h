@@ -1,3 +1,7 @@
+/**
+ * Auxiliary functions to perform Huffman decoding operations on MCUs,
+ * outputting the decompressed 8x8 thumbnails.
+ */
 #ifndef LRPTDEC_HUFFMAN_H
 #define LRPTDEC_HUFFMAN_H
 

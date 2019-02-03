@@ -63,31 +63,29 @@ rs_deinit(ReedSolomon *r)
 /* Check https://public.ccsds.org/Pubs/101x0b4s.pdf to learn more about the RS
  * code in use by the LRPT standard */
 int
-rs_fix_packet(ReedSolomon *self, Cvcdu *pkt, int *fixes)
+rs_fix_packet(ReedSolomon *self, Vcdu *pkt)
 {
 	int i;
 	int ret;
 	int corr_count;
-	size_t block_size;
 
-	block_size = sizeof(*pkt)/self->interleaving;
 	ret = 0;
 	for (i=0; i<self->interleaving; i++) {
 		/* Separate an interleaved block */
-		deinterleave(self->block, (uint8_t*)pkt, self->interleaving, i, block_size);
+		deinterleave(self->block, (uint8_t*)pkt, self->interleaving, i, RS_N);
 
 		/* Apply RS error correction */
 		corr_count = fix_block(self, self->block, RS_N);
-		if (fixes) {
-			fixes[i] = corr_count;
+
+		if (ret < 0 || corr_count < 0) {
+			ret = -1;
+		} else {
+			ret += corr_count;
 		}
 
-		ret = (ret>=0 && corr_count >= 0) ? ret+corr_count : -1;
-
 		/* Re-interleave the (hopefully) corrected packet */
-		interleave((uint8_t*)pkt, self->block, self->interleaving, i, sizeof(pkt));
+		interleave((uint8_t*)pkt, self->block, self->interleaving, i, RS_N);
 	}
-
 	return ret;
 }
 
@@ -117,7 +115,7 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 		return 0;
 	}
 
-	/* Compute lambda using Berlekamp-Massey */
+	/* Compute lambda using the Berlekamp-Massey algorithm */
 	memset(lambda, 0, sizeof(lambda));
 	memset(prev_lambda, 0, sizeof(prev_lambda));
 	lambda[0] = prev_lambda[0] = 1;
@@ -154,18 +152,17 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 		}
 	}
 
-	/* Bruteforce the roots of lambda */
-	for (i=0, error_count=0; i<RS_N; i++) {
+	/* Bruteforce the roots of lambda (zero cannot be a root by definition) */
+	for (i=1, error_count=0; i<RS_N && error_count < lambda_deg; i++) {
 		if (gf_poly_eval(lambda, i, RS_T+1) == 0) {
 			/* This is black magic */
 			error_pos[error_count] = RS_N - (_logtable[i] * (DUAL_BASIS_BASE-1)) % RS_N;
 			lambda_root[error_count] = i;
 			error_count++;
-			if (error_count > RS_T) {
-				return -1;
-			}
 		}
 	}
+
+	/* Not enough/too many roots found: message is unrecoverable */
 	if (error_count != lambda_deg) {
 		return -1;
 	}
@@ -178,13 +175,20 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 	for (i=0; i<error_count; i++) {
 		/* lambda_root = 1/Xi, Xi being the i-th error locator */
 		fcr = gf_pow(lambda_root[i], FIRST_CONSEC_ROOT-1);
-		num = gf_poly_eval(omega,       lambda_root[i], RS_2T);
+		num = gf_poly_eval(omega, lambda_root[i], RS_2T);
 		den = gf_poly_eval(lambda_prime,lambda_root[i], RS_T);
 
 		if (error_pos[i] < len) {
 			block[error_pos[i]] ^= gf_div(gf_mul(num, fcr), den);
 		}
 	}
+
+	printf("Syndromes: ");
+	for (i=0; i<RS_2T; i++) {
+		printf("%02x ", gf_poly_eval(block, self->poly_zeroes[i], len));
+	}
+	printf("\n");
+
 
 	free(omega);
 	free(lambda_prime);

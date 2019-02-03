@@ -1,6 +1,7 @@
 /**
  * Opaque data structures useful for abstracting sample/bit sources from their
- * origin */
+ * origin 
+ */
 #ifndef LRPTDEC_SOURCE_H
 #define LRPTDEC_SOURCE_H
 

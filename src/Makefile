@@ -2,7 +2,7 @@ SRC=$(wildcard *.c)
 OBJ=${SRC:.c=.o}
 
 CFLAGS += -I./include
-LDFLAGS += -lm -lpthread -lncursesw
+LDFLAGS += -lm 
 
 .PHONY: strip clean
 

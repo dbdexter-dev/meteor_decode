@@ -34,7 +34,7 @@ static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
 
 static unsigned int cost(int8_t x, int8_t y, int coding);
 
-static unsigned int _cost_lut[256][4];
+static unsigned int _cost_lut[256][3];
 static int _initialized = 0;
 
 HardSource*
@@ -56,7 +56,7 @@ viterbi_init(SoftSource *src)
 	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
 
 	if (!_initialized) {
-		for (i=-128; i<127; i++) {
+		for (i=-128; i<128; i++) {
 			_cost_lut[(uint8_t)i][0] = i + 128;
 			_cost_lut[(uint8_t)i][1] = abs(i-127);
 			_cost_lut[(uint8_t)i][2] = abs(i-127);
@@ -79,6 +79,7 @@ viterbi_deinit(HardSource *src)
 	free(v->mem);
 	free(v->tmp);
 	free(v);
+	free(src);
 
 	return 0;
 }
@@ -107,8 +108,8 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 		fwd_depth = (size_t)(MEM_DEPTH - self->cur_depth);
 		points_in = self->src->read(self->src, in, 2*fwd_depth)/2;
 		if (points_in < fwd_depth) {
-			/* We reached the end of the source, next run just flush the viterbi
-			 * memory instead of doing the whole algorithm */
+			/* We reached the end of the source: just flush the Viterbi memory
+			 * instead of doing the whole algorithm */
 			return viterbi_flush(src, out, len);
 		}
 		fwd_depth = points_in;
@@ -231,7 +232,6 @@ find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state, int id
 	/* Compute the input necessary to get to end_state */
 	input = id >> (K-1);
 
-
 	/* Try with candidate #1 */
 	start_state = ((id << 1) & (N_STATES - 1)) | 0x00;
 	tmpcost = cost(x, y, self->trans[start_state][input].output);
@@ -267,7 +267,6 @@ compute_trans(Viterbi *v)
 {
 	int state, input;
 	int output, next;
-
 
 	for (state=0; state<N_STATES; state++) {
 		for (input=0; input<2; input++) {

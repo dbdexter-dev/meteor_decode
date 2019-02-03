@@ -1,3 +1,8 @@
+/**
+ * Glue between packets and images: given a segment, it'll call the appropriate
+ * functions to Huffman decode its data, decompress the resulting JPEG
+ * thumbnails, and write those thumbnails to a BMP 
+ */
 #ifndef LRPTDEC_COMPOSITOR_H
 #define LRPTDEC_COMPOSITOR_H
 

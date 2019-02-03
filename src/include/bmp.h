@@ -1,3 +1,7 @@
+/**
+ * Functions/structs that offer a simple interface to write BMP files, handling
+ * header updates automatically 
+ */
 #ifndef LRPTDEC_BMP_H
 #define LRPTDEC_BMP_H
 
@@ -17,6 +21,6 @@ typedef struct {
 
 BmpSink *bmp_open(const char *fname);
 void     bmp_close(BmpSink *bmp);
-int      bmp_append(BmpSink *bmp, const uint8_t block[8][8]);
+int      bmp_append(BmpSink *bmp, uint8_t block[8][8]);
 
 #endif

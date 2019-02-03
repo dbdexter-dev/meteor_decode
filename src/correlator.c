@@ -36,7 +36,7 @@ static void iq_reverse_hard(uint8_t *buf, size_t count);
 static void iq_reverse_soft(int8_t *buf, size_t count);
 static int  qw_correlate(const int8_t *soft, const uint8_t *hard);
 
-/* 90 degree phase shift + phase mirroring lookup table 
+/* 90 degree phase shift + phase mirroring lookup table
  * XXX HARD BYTES, NOT SOFT SAMPLES XXX
  */
 static int8_t _rot_lut[256];
@@ -116,16 +116,11 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 	 * buffer */
 	if (self->buffer_offset) {
 		bytes_out = MIN(count, SOFT_FRAME_SIZE - self->buffer_offset);
-		memcpy(out, self->buffer + self->buffer_offset + self->frame_offset, bytes_out);
+		memcpy(out, self->buffer + self->buffer_offset, bytes_out);
 
 		self->buffer_offset = (self->buffer_offset+bytes_out)%SOFT_FRAME_SIZE;
 		out += bytes_out;
 		count -= bytes_out;
-	}
-
-	/* Reset buffer offset at this point */
-	if (count > 0) {
-		self->buffer_offset = 0;
 	}
 
 	while (count > 0) {
@@ -135,7 +130,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 		/* If there aren't enough bytes left, fix the frame and return */
 		if (bytes_in < (int)SOFT_FRAME_SIZE) {
 			correlator_soft_fix(self, self->buffer, bytes_in);
-			memcpy(out, self->buffer, MIN(bytes_in, count));
+			memcpy(out, self->buffer + bytes_out, MIN(bytes_in, count));
 			if (count < bytes_in) {
 				self->buffer_offset = count;
 			}
@@ -143,27 +138,25 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 		}
 
 		/* Check how far we were from the actual frame */
-		frame_offset = correlator_soft_correlate(self, self->buffer, SOFT_FRAME_SIZE);
-
+		self->frame_offset = correlator_soft_correlate(self, self->buffer, SOFT_FRAME_SIZE);
 		/* Read some more bytes to compensate for the offset */
-		bytes_in = self->src->read(self->src, self->buffer+SOFT_FRAME_SIZE, frame_offset);
+		bytes_in = self->src->read(self->src, self->buffer+SOFT_FRAME_SIZE, self->frame_offset);
 		/* Fix the sample's phase */
-		correlator_soft_fix(self, self->buffer + frame_offset, SOFT_FRAME_SIZE);
+		correlator_soft_fix(self, self->buffer + self->frame_offset, SOFT_FRAME_SIZE);
+
+		/* If there aren't enough bytes left, return */
+		if ((int)bytes_in < self->frame_offset) {
+			return bytes_out + bytes_in;
+		}
 
 		/* TODO: this might copy some garbage at the end, but whatever, it would
 		 * only be for the very last iteration. I'll fix it at some point :P */
 		if (count < SOFT_FRAME_SIZE) {
-			memcpy(out, self->buffer+frame_offset, count);
-			self->frame_offset = frame_offset;
+			memcpy(out, self->buffer+self->frame_offset+bytes_out, count);
 			self->buffer_offset = count;
 			return bytes_out + count;
 		}
-		memcpy(out, self->buffer+frame_offset, SOFT_FRAME_SIZE);
-
-		/* If there aren't enough bytes left, return */
-		if ((int)bytes_in < frame_offset) {
-			return bytes_out + bytes_in;
-		}
+		memcpy(out, self->buffer+self->frame_offset+bytes_out, SOFT_FRAME_SIZE);
 
 		out += SOFT_FRAME_SIZE;
 		bytes_out += SOFT_FRAME_SIZE;
@@ -342,13 +335,13 @@ iq_rotate_soft(int8_t *buf, size_t count, Phase p)
 		break;
 	}
 }
-			
+
 /* Flip I<->Q in a bit pattern */
 static void
 iq_reverse_hard(uint8_t *buf, size_t count)
 {
 	size_t i;
-	
+
 	for (i=0; i<count; i++) {
 		buf[i] = _inv_lut[buf[i]];
 	}

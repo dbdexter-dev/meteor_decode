@@ -1,3 +1,7 @@
+/**
+ * Provides an interface to read a file containing QPSK symbols, streaming its
+ * contents to other functions
+ */
 #ifndef LRPTDEC_FILE_H
 #define LRPTDEC_FILE_H
 

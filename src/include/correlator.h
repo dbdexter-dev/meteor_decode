@@ -1,3 +1,8 @@
+/**
+ * Correlates a bit pattern to a stream, trying to recognize the most likely
+ * location of said pattern. Useful to estimate where a CADU might begin
+ * before running it through the Viterbi decoder.
+ */
 #ifndef LRPTDEC_CORRELATOR_H
 #define LRPTDEC_CORRELATOR_H
 

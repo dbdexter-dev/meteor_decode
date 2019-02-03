@@ -1,6 +1,6 @@
 /** 
  * LRPT packet structure information, plus some auxiliary functions to make
- * accessing weird bit offsets simpler
+ * accessing weird bit offsets simpler.
  */
 
 #ifndef LRPTDEC_PACKET_H
@@ -24,13 +24,13 @@
 #define MCU_PER_MPDU 14
 #define MCU_PER_PP (MCU_PER_MPDU * MPDU_PER_PP)
 
-/* Minimum code unit structure */
 typedef struct {
 	uint8_t day[2];
 	uint8_t msec[4];
 	uint8_t usec[2];
 } Timestamp;
 
+/* Minimum code unit structures */
 typedef struct {
 	uint8_t seq;
 	uint8_t scan_hdr[2];
@@ -65,23 +65,23 @@ typedef struct {
 	uint8_t mpdu_data[MPDU_DATA_SIZE];
 
 	uint8_t reed_solomon[VCDU_RS_SIZE];
-} Cvcdu;
+} Vcdu;
 
 /* Channel Access Data Unit */
 typedef struct _cadu {
 	uint32_t sync_marker;
-	Cvcdu cvcdu;
+	Vcdu cvcdu;
 } Cadu;
 
 /* Defined in packet.c */
 const uint8_t SYNCWORD[4];
 
-uint32_t vcdu_counter(const Cvcdu *p);
-int      vcdu_header_offset(const Cvcdu *p);
-int      vcdu_id(const Cvcdu *p);
-void*    vcdu_mpdu_header_ptr(Cvcdu *p);
-int      vcdu_spacecraft(const Cvcdu *p);
-int      vcdu_vcid(const Cvcdu *p);
+uint32_t vcdu_counter(const Vcdu *p);
+int      vcdu_header_offset(const Vcdu *p);
+int      vcdu_id(const Vcdu *p);
+void*    vcdu_mpdu_header_ptr(Vcdu *p);
+int      vcdu_spacecraft(const Vcdu *p);
+int      vcdu_vcid(const Vcdu *p);
 
 int      mpdu_apid(const Mpdu *p);
 int      mpdu_data_len(const Mpdu *p);

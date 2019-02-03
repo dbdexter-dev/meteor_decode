@@ -21,7 +21,7 @@ static const int _zigzag_lut[64] =
 	53, 60, 61, 54, 47, 55, 62, 63
 };
 
-static const uint8_t _black_square[8][8] = { 0 };
+static uint8_t _black_square[8][8] = { 0 };
 
 
 Compositor*
@@ -33,6 +33,7 @@ comp_init(BmpSink *s, int init_offset)
 	ret->bmp = s;
 	ret->next_mcu_seq = init_offset;
 	jpeg_init();
+	huffman_init();
 
 	return ret;
 }
@@ -48,8 +49,9 @@ int
 comp_compose(Compositor *self, const Segment *seg)
 {
 	Mcu *mcu;
-	int i;
+	int i, j;
 	int jpeg_quality, seq_delta;
+	int bytes_read;
 	const uint8_t *raw_data;
 	int16_t decoded_strip[MCU_PER_MPDU][8][8];
 	uint8_t tmp[8][8];
@@ -77,12 +79,20 @@ comp_compose(Compositor *self, const Segment *seg)
 	}
 
 	/* Huffman-decode the whole strip */
-	huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU);
+	bytes_read = huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU);
+	if (seg->len <= bytes_read) {
+		printf("[WARN] possible bytes buffer overrun? %d <-> %d\n", seg->len, bytes_read);
+	}
 
 	/* Un-zigzag, decompress, and write out each block */
 	for (i=0; i<MCU_PER_MPDU; i++) {
 		unzigzag(decoded_strip[i]);
 		jpeg_decode(tmp, decoded_strip[i], jpeg_quality);
+		if (i==0) {
+			for (j=0; j<8; j++) {
+				tmp[j][0] = 0xFF;
+			}
+		}
 		bmp_append(self->bmp, tmp);
 	}
 
