@@ -49,7 +49,7 @@ int
 comp_compose(Compositor *self, const Segment *seg)
 {
 	Mcu *mcu;
-	int i, j;
+	int i;
 	int jpeg_quality, seq_delta;
 	int bytes_read;
 	const uint8_t *raw_data;
@@ -88,11 +88,6 @@ comp_compose(Compositor *self, const Segment *seg)
 	for (i=0; i<MCU_PER_MPDU; i++) {
 		unzigzag(decoded_strip[i]);
 		jpeg_decode(tmp, decoded_strip[i], jpeg_quality);
-		if (i==0) {
-			for (j=0; j<8; j++) {
-				tmp[j][0] = 0xFF;
-			}
-		}
 		bmp_append(self->bmp, tmp);
 	}
 

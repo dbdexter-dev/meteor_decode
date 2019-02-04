@@ -28,7 +28,7 @@ typedef struct {
 	uint8_t day[2];
 	uint8_t msec[4];
 	uint8_t usec[2];
-} Timestamp;
+}__attribute__((packed)) Timestamp;
 
 /* Minimum code unit structures */
 typedef struct {
@@ -37,7 +37,7 @@ typedef struct {
 	uint8_t segment_hdr[3];
 
 	uint8_t data;
-} Mcu;
+}__attribute__((packed)) Mcu;
 
 typedef struct {
 	uint8_t data;
@@ -50,7 +50,7 @@ typedef struct {
 	uint8_t len[2];
 
 	uint8_t data;
-} Mpdu;
+}__attribute__((packed)) Mpdu;
 
 /* Coded Virtual Channel Data Unit */
 typedef struct {
@@ -65,13 +65,13 @@ typedef struct {
 	uint8_t mpdu_data[MPDU_DATA_SIZE];
 
 	uint8_t reed_solomon[VCDU_RS_SIZE];
-} Vcdu;
+}__attribute__((packed)) Vcdu;
 
 /* Channel Access Data Unit */
 typedef struct _cadu {
 	uint32_t sync_marker;
 	Vcdu cvcdu;
-} Cadu;
+}__attribute__((packed)) Cadu;
 
 /* Defined in packet.c */
 const uint8_t SYNCWORD[4];

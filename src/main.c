@@ -84,7 +84,7 @@ main(int argc, char *argv[])
 			log("seq=%d len=%d APID=%d, tstamp=%x\n", seg.seq, seg.len,
 			    seg.apid, seg.timestamp);
 /*			hexdump("Data", seg.data, seg.len);*/
-			if (seg.apid == 68) {
+			if (seg.apid == 65) {
 				comp_compose(comp, &seg);
 			}
 		} else {

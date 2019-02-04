@@ -52,7 +52,7 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 {
 	int ac_cat, dc_cat;
 	unsigned int runlength, ac_size;
-	uint32_t dc_info, ac_info;
+	uint16_t dc_info, ac_info;
 	int dc_signum, dc_coeff;
 	int ac_signum, ac_val;
 	size_t i, r;
@@ -97,9 +97,14 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 				/* Not a valid code yet: fetch another bit */
 				ac_info = (ac_info << 1) | get_bits(src+byte_idx, bit_idx, 1);
 				bit_idx++;
-				if (ac_info > 65535) {
-					return -1;
+				if (ac_info == 65535) {
+					ac_info = 0;
 				}
+			}
+
+			if (bit_idx > 7) {
+				byte_idx += bit_idx/8;
+				bit_idx %= 8;
 			}
 
 			/* EOB sequence, 4 bits long */
@@ -114,8 +119,9 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 
 				/* Extract the AC value */
 				ac_signum = get_bits(src+byte_idx, bit_idx, 1);
-				ac_val = get_bits(src+byte_idx, bit_idx, ac_size-1);
+				ac_val = get_bits(src+byte_idx, bit_idx+1, ac_size-1);
 
+				/* signum = 0 -> lower range, signum = 1 -> upper range */
 				if (ac_signum) {
 					ac_val += _min_range[ac_size];
 				} else {
@@ -154,12 +160,12 @@ get_bits(const uint8_t *ptr, int bit_offset, int nbits)
 
 	i = 0;
 	while (bit_offset > 7) {
-		i++;
+		ptr++;
 		bit_offset -= 8;
 	}
 
 	/* Read the first fragment from the first byte */
-	ret = (ptr[i] & ((1<<(8-bit_offset))-1)) >> MAX(0, 8 - bit_offset - nbits);
+	ret = (ptr[0] & ((1<<(8-bit_offset))-1)) >> MAX(0, 8 - bit_offset - nbits);
 	nbits -= 8-bit_offset;
 
 	/* Append full bytes from the middle of the selected bit range */
