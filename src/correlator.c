@@ -23,7 +23,7 @@ typedef struct {
 } Correlator;
 
 static int    correlator_read_aligned(SoftSource *src, int8_t *out, size_t count);
-static int    correlator_deinit_soft(SoftSource *c);
+static void   correlator_deinit_soft(SoftSource *c);
 static int    correlator_soft_correlate(Correlator *c, const int8_t* frame, size_t len);
 static void   correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
 
@@ -85,7 +85,7 @@ correlator_init_soft(SoftSource *src, uint8_t syncword[PATT_SIZE])
 	return ret;
 }
 
-int
+void
 correlator_deinit_soft(SoftSource *src)
 {
 	Correlator *c = src->_backend;
@@ -93,8 +93,6 @@ correlator_deinit_soft(SoftSource *src)
 	free(c->patterns);
 	free(c);
 	free(src);
-
-	return 0;
 }
 
 /* Ladies and gentlemen, I present to you:
@@ -365,9 +363,6 @@ qw_correlate(const uint8_t *soft, const uint8_t *hard)
 	/* 1 qword = 8 bytes = 32 symbols = 64 samples */
 	for (i=0; i<64; i++) {
 		correlation += !(*soft++ ^ *hard++);
-		if (correlation > CORRELATION_THR) {
-			return correlation;
-		}
 	}
 
 	return correlation;

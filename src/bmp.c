@@ -207,7 +207,6 @@ update_header(BmpSink *bmp)
 static void
 write_strip(BmpSink *bmp)
 {
-	printf("\nWriting strip...");
 	fwrite(bmp->strip, sizeof(bmp->strip), 1, bmp->fd);
 	bmp->num_rows += 8;
 	bmp->col_r = 0;

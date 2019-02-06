@@ -91,7 +91,7 @@ main(int argc, char *argv[])
 	seq = -1;
 
 	while(pkt_read(pp, &seg)){
-		if (seg.len > 0) {
+		if (seg.len > 0 && seg.apid) {
 			log("\nseq=%5d len=%3d APID=%d, tstamp=%s", seg.seq, seg.len,
 			    seg.apid, timeofday(seg.timestamp));
 
@@ -110,7 +110,7 @@ main(int argc, char *argv[])
 				while (!align_okay) {
 					for (channel=0; channel<3; channel++) {
 						if (pixelgen[channel]->pkt_end < seg.seq || pixelgen[channel]->pkt_end - seg.seq > 8192) {
-							printf("\n(%d) Seq realign %d to %d", channel, pixelgen[channel]->pkt_end, seg.seq);
+							printf("\nAligning %d to %d", pixelgen[channel]->pkt_end, seg.seq);
 							for (i=pixelgen[channel]->mcu_nr; i<MCU_PER_PP; i += MCU_PER_MPDU) {
 								pixelgen_append(pixelgen[channel], NULL);
 							}

@@ -8,8 +8,8 @@ typedef struct {
 	int bps;
 } FileSrc;
 
-static int src_soft_read(SoftSource *src, int8_t *buf, size_t count);
-static int src_soft_close(SoftSource *src);
+static int  src_soft_read(SoftSource *src, int8_t *buf, size_t count);
+static void src_soft_close(SoftSource *src);
 
 SoftSource*
 src_soft_open(const char *path, int bps) {
@@ -58,7 +58,7 @@ src_soft_read(SoftSource *self, int8_t *buf, size_t count) {
 	return samples_read;
 }
 
-int
+void
 src_soft_close(SoftSource *self) {
 	FileSrc *src = self->_backend;
 
@@ -68,6 +68,4 @@ src_soft_close(SoftSource *self) {
 	}
 
 	free(self);
-	return 0;
 }
-
