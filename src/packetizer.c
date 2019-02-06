@@ -92,7 +92,6 @@ pkt_read(Packetizer *self, Segment *seg)
 	if ((uint8_t*)mpdu + MPDU_HDR_SIZE > (uint8_t*)vcdu->mpdu_data + MPDU_DATA_SIZE) {
 		/* Get the first fragment from the end of the current packet */
 		bytes_out = MPDU_DATA_SIZE - ((uint8_t*)mpdu - vcdu->mpdu_data);
-		printf("Fragmented header (%d bytes left)\n", bytes_out);
 
 		/* Corrupted packets might get here for some reason, so this avoids
 		 * segfaults from the upcoming memcpy */
@@ -139,7 +138,6 @@ pkt_read(Packetizer *self, Segment *seg)
 	seg->timestamp = 0;
 
 	/* This might happen when RS thinks the packet is good but it really isn't */
-	printf("Segment length: %d\n", seg->len);
 	if (seg->len > MAX_PKT_SIZE) {
 		self->next_header = NULL;
 		seg->len = 0;

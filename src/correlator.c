@@ -25,23 +25,21 @@ typedef struct {
 static int    correlator_read_aligned(SoftSource *src, int8_t *out, size_t count);
 static int    correlator_deinit_soft(SoftSource *c);
 static int    correlator_soft_correlate(Correlator *c, const int8_t* frame, size_t len);
-static size_t correlator_soft_errors(const int8_t* frame, const uint8_t* ref, size_t len);
 static void   correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
 
-static int  correlate(int8_t x, uint8_t hard);
+static void soft_to_hard(uint8_t *dst, const int8_t *src, size_t nbytes);
 static void add_pattern(Correlator *self, const uint8_t *pattern);
 static void iq_rotate_hard(uint8_t *buf, size_t count, Phase p);
 static void iq_rotate_soft(int8_t *buf, size_t count, Phase p);
 static void iq_reverse_hard(uint8_t *buf, size_t count);
 static void iq_reverse_soft(int8_t *buf, size_t count);
-static int  qw_correlate(const int8_t *soft, const uint8_t *hard);
+static int  qw_correlate(const uint8_t *soft, const uint8_t *hard);
 
 /* 90 degree phase shift + phase mirroring lookup table
  * XXX HARD BYTES, NOT SOFT SAMPLES XXX
  */
 static int8_t _rot_lut[256];
 static int8_t _inv_lut[256];
-static int    _corr_lut[256][2];
 static int    _initialized = 0;
 
 /* Initialize the correlator */
@@ -67,8 +65,6 @@ correlator_init_soft(SoftSource *src, uint8_t syncword[PATT_SIZE])
 		for (i=0; i<255; i++) {
 			_rot_lut[i] = ((i & 0x55) ^ 0x55) << 1 | (i & 0xAA) >> 1;
 			_inv_lut[i] = (i & 0x55) << 1 | (i & 0xAA) >> 1;
-			_corr_lut[i][0] = (int8_t)i < 0;
-			_corr_lut[i][1] = (int8_t)i > 0;
 		}
 		_initialized = 1;
 	}
@@ -107,7 +103,6 @@ correlator_deinit_soft(SoftSource *src)
 int
 correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 {
-	int frame_offset;
 	size_t bytes_in, bytes_out;
 	Correlator *const self = src->_backend;
 
@@ -146,7 +141,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 
 		/* If there aren't enough bytes left, return */
 		if ((int)bytes_in < self->frame_offset) {
-			return bytes_out + bytes_in;
+			return bytes_out;
 		}
 
 		/* TODO: this might copy some garbage at the end, but whatever, it would
@@ -156,6 +151,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 			self->buffer_offset = count;
 			return bytes_out + count;
 		}
+
 		memcpy(out, self->buffer+self->frame_offset+bytes_out, SOFT_FRAME_SIZE);
 
 		out += SOFT_FRAME_SIZE;
@@ -166,6 +162,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 	return bytes_out;
 }
 
+
 /* Try to locate one of the patterns inside a frame */
 int
 correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
@@ -173,16 +170,21 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 	size_t i, pattern;
 	int max_corr, max_corr_pos, tmp_corr;
 	int *correlation, *corr_pos;
+	uint8_t *hard_frame;
 
 	/* Save the correlation indices and their correlation factor */
 	correlation = calloc(self->pattern_count, sizeof(*correlation));
 	corr_pos = calloc(self->pattern_count, sizeof(*corr_pos));
+	hard_frame = safealloc(len);
+
+	/* Convert the soft frame to a hard one */
+	soft_to_hard(hard_frame, frame, len);
 
 	/* Compute the correlation indices for each position, for each pattern, up
 	 * until there are no qwords left (so 64 bytes early) */
 	for (i=0; i<len-64; i++) {
 		for (pattern=0; pattern<self->pattern_count; pattern++) {
-			tmp_corr = qw_correlate(frame+i, self->patterns[pattern]);
+			tmp_corr = qw_correlate(hard_frame+i, self->patterns[pattern]);
 
 			/* Fast exit in case correlation is very high */
 			if (tmp_corr > CORRELATION_THR) {
@@ -190,6 +192,7 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 				max_corr_pos = i;
 				free(correlation);
 				free(corr_pos);
+				free(hard_frame);
 				return i;
 			}
 
@@ -211,28 +214,10 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 		}
 	}
 
+	free(hard_frame);
 	free(correlation);
 	free(corr_pos);
 	return max_corr_pos;
-}
-
-/* Get the bit error rate between soft samples and (corresponding) hard samples */
-size_t
-correlator_soft_errors(const int8_t *frame, const uint8_t* ref, size_t len)
-{
-	size_t i, j;
-	size_t error_count;
-
-	error_count = 0;
-	for (i=0; i<len; i++) {
-		for (j=0; j<8; j++) {
-			if (!correlate(frame[i*8+j],  (ref[i] >> (7-j)))) {
-				error_count++;
-			}
-		}
-	}
-
-	return error_count;
 }
 
 /* Correct a frame based on the pattern we locked on to earlier */
@@ -360,17 +345,18 @@ iq_reverse_soft(int8_t *buf, size_t count)
 	}
 }
 
-/* Correlate a soft sample and a hard sample */
-static int
-correlate(int8_t x, uint8_t hard)
+/* Convert soft samples into a byte-expanded bit representation */
+static void
+soft_to_hard(uint8_t *hard, const int8_t *soft, size_t nbytes)
 {
-	return !((x < 0) ^ !(hard & 0x01));
+	for (nbytes--; nbytes>0; nbytes--) {
+		*hard++ = (*soft++ > 0);
+	}
 }
-
 
 /* Correlate a soft qword and a hard qword */
 static int
-qw_correlate(const int8_t *soft, const uint8_t *hard)
+qw_correlate(const uint8_t *soft, const uint8_t *hard)
 {
 	int i, correlation;
 
@@ -378,7 +364,7 @@ qw_correlate(const int8_t *soft, const uint8_t *hard)
 
 	/* 1 qword = 8 bytes = 32 symbols = 64 samples */
 	for (i=0; i<64; i++) {
-		correlation += _corr_lut[(uint8_t)soft[i]][hard[i]];
+		correlation += !(*soft++ ^ *hard++);
 		if (correlation > CORRELATION_THR) {
 			return correlation;
 		}
@@ -386,5 +372,4 @@ qw_correlate(const int8_t *soft, const uint8_t *hard)
 
 	return correlation;
 }
-
 /*}}}*/

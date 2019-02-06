@@ -19,10 +19,10 @@
 #define MPDU_DATA_SIZE 882
 #define MPDU_SEC_HDR_SIZE (sizeof(Timestamp))
 
-#define MPDU_PER_PP 14
+#define MPDU_PER_LINE 14
 #define MCU_HDR_SIZE 6
 #define MCU_PER_MPDU 14
-#define MCU_PER_PP (MCU_PER_MPDU * MPDU_PER_PP)
+#define MCU_PER_PP (MCU_PER_MPDU * MPDU_PER_LINE)
 
 typedef struct {
 	uint8_t day[2];

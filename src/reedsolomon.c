@@ -13,7 +13,6 @@ static void interleave(uint8_t *out, const uint8_t *in, int step, int delta, siz
 
 static uint8_t  gf_mul(uint8_t x, uint8_t y);
 static uint8_t  gf_div(uint8_t x, uint8_t y);
-static uint8_t  gf_inv(uint8_t x);
 static uint8_t  gf_pow(uint8_t x, int exp);
 static uint8_t  gf_poly_eval(const uint8_t *poly, uint8_t x, size_t len);
 static uint8_t* gf_poly_mul(const uint8_t *x, const uint8_t *y, size_t len_x, size_t len_y);
@@ -77,9 +76,9 @@ rs_fix_packet(ReedSolomon *self, Vcdu *pkt)
 		/* Apply RS error correction */
 		corr_count = fix_block(self, self->block, RS_N);
 
-		if (ret < 0 || corr_count < 0) {
+		if (corr_count < 0) {
 			ret = -1;
-		} else {
+		} else if (ret >= 0) {
 			ret += corr_count;
 		}
 
@@ -183,13 +182,6 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 		}
 	}
 
-	printf("Syndromes: ");
-	for (i=0; i<RS_2T; i++) {
-		printf("%02x ", gf_poly_eval(block, self->poly_zeroes[i], len));
-	}
-	printf("\n");
-
-
 	free(omega);
 	free(lambda_prime);
 	return error_count;
@@ -287,11 +279,7 @@ gf_div(uint8_t x, uint8_t y)
 	}
 	return _alpha[(_logtable[x] - _logtable[y] + RS_N) % RS_N];
 }
-static uint8_t
-gf_inv(uint8_t x)
-{
-	return _alpha[RS_N - _logtable[x]];
-}
+
 static uint8_t
 gf_pow(uint8_t x, int exp)
 {

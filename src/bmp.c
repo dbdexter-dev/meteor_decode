@@ -59,7 +59,9 @@ bmp_open(const char *fname)
 		fwrite(&hdr, sizeof(hdr), 1, fd);
 		fwrite(&dib, sizeof(dib), 1, fd);
 		ret = safealloc(sizeof(*ret));
-		ret->cur_col = 0;
+		ret->col_r = 0;
+		ret->col_g = 0;
+		ret->col_b = 0;
 		ret->num_rows = 0;
 		ret->fd = fd;
 		memset(ret->strip, 0, sizeof(ret->strip));
@@ -74,39 +76,99 @@ bmp_open(const char *fname)
 void
 bmp_close(BmpSink *bmp)
 {
-	if (bmp->cur_col > 0) {
-		write_strip(bmp);
-	}
-
+	write_strip(bmp);
 	update_header(bmp);
+
 	fclose(bmp->fd);
 	free(bmp);
 }
 
+
 /* Queue up a block for writing */
 int
-bmp_append(BmpSink *bmp, uint8_t block[8][8])
+bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c)
 {
 	int i, j;
 
-	for (i=0; i<8; i++) {
-		for (j=0; j<8; j++) {
-			bmp->strip[i][bmp->cur_col+j] = block[i][j];
+	int ret;
+
+	ret = 0;
+
+	switch(c) {
+	case RED:
+		if (bmp->col_r >= PX_PER_ROW) {
+			write_strip(bmp);
+			update_header(bmp);
 		}
+		for (i=0; i<8; i++) {
+			for (j=0; j<8; j++) {
+				bmp->strip[i][bmp->col_r+j][2] = block[i][j];
+			}
+		}
+		bmp->col_r += 8;
+		ret = bmp->col_r;
+		break;
+	case GREEN:
+		if (bmp->col_g >= PX_PER_ROW) {
+			write_strip(bmp);
+			update_header(bmp);
+		}
+		for (i=0; i<8; i++) {
+			for (j=0; j<8; j++) {
+				bmp->strip[i][bmp->col_g+j][1] = block[i][j];
+			}
+		}
+		bmp->col_g += 8;
+		ret = bmp->col_g;
+		break;
+	case BLUE:
+		if (bmp->col_b >= PX_PER_ROW) {
+			write_strip(bmp);
+			update_header(bmp);
+		}
+		for (i=0; i<8; i++) {
+			for (j=0; j<8; j++) {
+				bmp->strip[i][bmp->col_b+j][0] = block[i][j];
+			}
+		}
+		bmp->col_b += 8;
+		ret = bmp->col_b;
+		break;
+	case ALL:       /* Fallthrough */
+	default:
+		if (bmp->col_r >= PX_PER_ROW || bmp->col_g >= PX_PER_ROW || bmp->col_b >= PX_PER_ROW) {
+			write_strip(bmp);
+			update_header(bmp);
+		}
+		for (i=0; i<8; i++) {
+			for (j=0; j<8; j++) {
+				bmp->strip[i][bmp->col_r+j][0] = block[i][j];
+				bmp->strip[i][bmp->col_g+j][1] = block[i][j];
+				bmp->strip[i][bmp->col_b+j][2] = block[i][j];
+			}
+		}
+		bmp->col_r += 8;
+		bmp->col_g += 8;
+		bmp->col_b += 8;
+		ret = bmp->col_r;
+		break;
 	}
 
-	bmp->cur_col += 8;
-	if (bmp->cur_col >= PX_PER_ROW) {
+	return ret;
+}
+
+/* Skip count lines by drawing them black */
+void
+bmp_skip_lines(BmpSink *bmp, int count)
+{
+	for (; count>0; count--) {
 		write_strip(bmp);
-		bmp->cur_col = 0;
-		update_header(bmp);
 	}
-
-	return 0;
 }
 
 /* Static functions {{{ */
-
+/* Update the BMP header. Note the negative height: this is because BMP stores
+ * pixels left to right, bottom to top, and the image comes in top to bottom */
 static void
 update_header(BmpSink *bmp)
 {
@@ -145,17 +207,12 @@ update_header(BmpSink *bmp)
 static void
 write_strip(BmpSink *bmp)
 {
-	int i, j;
-	uint8_t px[3];
-
-	for (i=0; i<8; i++) {
-		for (j=0; j<PX_PER_ROW; j++) {
-			px[0] = px[1] = px[2] = bmp->strip[i][j];
-			fwrite(px, sizeof(px), 1, bmp->fd);
-		}
-	}
-
+	printf("\nWriting strip...");
+	fwrite(bmp->strip, sizeof(bmp->strip), 1, bmp->fd);
 	bmp->num_rows += 8;
+	bmp->col_r = 0;
+	bmp->col_g = 0;
+	bmp->col_b = 0;
 	memset(bmp->strip, 0, sizeof(bmp->strip));
 }
 /*}}}*/

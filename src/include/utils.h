@@ -12,6 +12,7 @@
 
 void  fatal(char *msg);
 char* gen_fname(int apid);
+void  parse_apids(int *apid_list, char *raw);
 void* safealloc(size_t size);
 void  splash(void);
 char* timeofday(unsigned int msec);
