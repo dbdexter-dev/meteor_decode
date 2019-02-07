@@ -184,7 +184,7 @@ update_header(BmpSink *bmp)
 
 	dib.dibsize = sizeof(DIBheader);
 	dib.width = PX_PER_ROW;
-	dib.height = bmp->num_rows;
+	dib.height = -bmp->num_rows;
 	dib.num_colorplanes = 1;
 	dib.bits_per_px = BMP_BPP;
 	dib.compression = 0;

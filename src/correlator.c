@@ -178,14 +178,27 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 	/* Convert the soft frame to a hard one */
 	soft_to_hard(hard_frame, frame, len);
 
+	/* Prioritize the correlation in the first position */
+	for (pattern=0; pattern<self->pattern_count; pattern++) {
+		tmp_corr = qw_correlate(hard_frame, self->patterns[pattern]);
+		if (tmp_corr >= CORRELATION_THR - 5) {
+			self->active_correction = pattern;
+			max_corr_pos = 0;
+			free(correlation);
+			free(corr_pos);
+			free(hard_frame);
+			return 0;
+		}
+	}
+
 	/* Compute the correlation indices for each position, for each pattern, up
 	 * until there are no qwords left (so 64 bytes early) */
-	for (i=0; i<len-64; i++) {
+	for (i=1; i<len-64; i++) {
 		for (pattern=0; pattern<self->pattern_count; pattern++) {
 			tmp_corr = qw_correlate(hard_frame+i, self->patterns[pattern]);
 
 			/* Fast exit in case correlation is very high */
-			if (tmp_corr > CORRELATION_THR) {
+			if (tmp_corr >= CORRELATION_THR) {
 				self->active_correction = pattern;
 				max_corr_pos = i;
 				free(correlation);

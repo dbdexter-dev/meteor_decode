@@ -18,6 +18,7 @@
 #define MPDU_HDR_SIZE 6
 #define MPDU_DATA_SIZE 882
 #define MPDU_SEC_HDR_SIZE (sizeof(Timestamp))
+#define MPDU_MAX_SEQ 16384
 
 #define MPDU_PER_LINE 14
 #define MCU_HDR_SIZE 6

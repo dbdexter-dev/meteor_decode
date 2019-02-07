@@ -61,6 +61,7 @@ pkt_read(Packetizer *self, Segment *seg)
 	if (!self->next_header) {
 		/* Fetch a new CADU */
 		rs_fix_count = retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs);
+		self->rs_fix_count = rs_fix_count;
 
 		/* Check RS return status */
 		if (rs_fix_count == -1) {
@@ -103,6 +104,7 @@ pkt_read(Packetizer *self, Segment *seg)
 
 		/* Fetch a new packet to get the second fragment */
 		rs_fix_count = retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs);
+		self->rs_fix_count = rs_fix_count;
 
 		if (rs_fix_count == -1) {
 			self->next_header = NULL;
@@ -154,6 +156,7 @@ pkt_read(Packetizer *self, Segment *seg)
 		}
 
 		rs_fix_count = retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs);
+		self->rs_fix_count = rs_fix_count;
 
 		/* Check RS return status */
 		if (rs_fix_count == -1) {
