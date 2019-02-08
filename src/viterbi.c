@@ -31,7 +31,7 @@ static int  write_bits(uint8_t *out, const uint8_t *bits, size_t count);
 static inline unsigned int cost(int8_t x, int8_t y, uint8_t coding);
 
 static unsigned int _cost_lut[256][2];
-static int _initialized = 0;
+static int          _initialized = 0;
 
 HardSource*
 viterbi_init(SoftSource *src)
@@ -57,6 +57,7 @@ viterbi_init(SoftSource *src)
 			_cost_lut[(uint8_t)i][0] = i + 128;
 			_cost_lut[(uint8_t)i][1] = abs(i-127);
 		}
+		_initialized = 1;
 	}
 
 	ret->_backend = v;
@@ -101,15 +102,9 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 		/* Calculate how deep to go and how many bytes to read */
 		fwd_depth = (size_t)(MEM_DEPTH - self->cur_depth);
 		points_in = self->src->read(self->src, in, 2*fwd_depth)/2;
-		if (points_in < fwd_depth) {
-			/* We reached the end of the source: just flush the Viterbi memory
-			 * instead of doing the whole algorithm */
-			return viterbi_flush(src, out, len);
-		}
-		fwd_depth = points_in;
 
 		/* Run the Viterbi algorithm forward */
-		for (i=0, in_pos=0; i<(int)fwd_depth; i++) {
+		for (i=0, in_pos=0; i<(int)points_in; i++) {
 			/* Get a symbol from the source */
 			x = in[in_pos++];
 			y = in[in_pos++];
@@ -131,6 +126,12 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			if (self->mem[i]->cost < best->cost) {
 				best = self->mem[i];
 			}
+		}
+
+		if (points_in < fwd_depth) {
+			/* We reached the end of the source: just flush the Viterbi memory
+			 * instead of doing the whole algorithm */
+			return viterbi_flush(src, out, len);
 		}
 
 		/* Write out depth - BACKTRACK_DEPTH bits */
@@ -220,11 +221,11 @@ update_costs(const Viterbi *const self, int8_t x, int8_t y)
 	int id;
 	int start_state, prev;
 	uint8_t input;
-	unsigned int tmpcost, mincost;
+	uint16_t tmpcost, mincost;
 
 
 	for (id=0; id<N_STATES; id++) {
-		mincost = (unsigned int) -1;
+		mincost = (uint16_t) -1;
 		end_state = self->tmp[id];
 
 		/* Compute the input necessary to get to end_state */

@@ -6,6 +6,20 @@
 
 static char _time_of_day[sizeof("HH:MM:SS.mmm")];
 
+
+/* Count the ones in a uint8_t */
+int
+count_ones(uint8_t val)
+{
+	int i, ret;
+
+	ret = 0;
+	for (i=0; i<8; i++) {
+		ret += (val >> i) & 0x01;
+	}
+	return ret;
+}
+
 void
 fatal(char *msg)
 {

@@ -33,6 +33,8 @@ decoder_init(BmpSink *dst, SoftSource *src, int apids[3])
 	ret->seq = -1;
 	ret->last_tstamp = 0;
 	ret->apid = 0;
+	ret->total_count = 0;
+	ret->valid_count = 0;
 
 	return ret;
 }
@@ -80,6 +82,24 @@ decoder_get_apid(Decoder *self)
 	return self->apid;
 }
 
+int
+decoder_get_seq(Decoder *self)
+{
+	return self->seq;
+}
+
+int
+decoder_get_valid_count(Decoder *self)
+{
+	return self->valid_count;
+}
+
+int
+decoder_get_total_count(Decoder *self)
+{
+	return self->total_count;
+}
+
 uint32_t
 decoder_get_time(Decoder *self)
 {
@@ -107,10 +127,12 @@ decoder_thr_run(void *arg)
 	self = (Decoder*)arg;
 
 	while (self->running && pkt_read(self->pp, &seg)) {
+		self->total_count++;
 		/* Skip invalid packets */
 		if (seg.len <= 0) {
 			continue;
 		}
+		self->valid_count++;
 
 		/* Skip packets that are not images from the AVHRR */
 		if (seg.apid < 64 || seg.apid >= 70) {

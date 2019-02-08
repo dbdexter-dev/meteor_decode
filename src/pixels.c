@@ -72,14 +72,19 @@ pixelgen_append(PixelGen *self, const Segment *seg)
 		quality = mcu_quality_factor(mcu);
 		raw_data = mcu_data_ptr(mcu);
 
-		huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU);
+		/* Exit if Huffman decoding fails */
+		if (huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU, seg->len)<0) {
+			return;
+		}
 
+		/* Transform the data into a pixel matrix, and append it to the bmp */
 		for (i=0; i<MCU_PER_MPDU; i++) {
 			unzigzag(decoded_strip[i]);
 			jpeg_decode(thumbnail, decoded_strip[i], quality);
 			self->mcu_nr = bmp_append(self->bmp, thumbnail, self->channel);
 		}
 
+		/* Update the next expected MCU number and segment sequence number */
 		self->mcu_nr = (self->mcu_nr / 8) % MCU_PER_PP;
 		if (self->mcu_nr) {
 			self->pkt_end = seg->seq + (MCU_PER_PP - mcu_seq(mcu))/MCU_PER_MPDU - 1;

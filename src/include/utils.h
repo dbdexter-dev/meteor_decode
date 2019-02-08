@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+int   count_ones(uint8_t val);
 void  fatal(char *msg);
 char* gen_fname(int apid);
 void  parse_apids(int *apid_list, char *raw);

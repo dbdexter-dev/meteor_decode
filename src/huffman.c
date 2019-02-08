@@ -48,14 +48,14 @@ huffman_init()
 
 /* RLE and Huffman together, this is a monstrosity */
 int
-huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
+huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, int count, int maxlen)
 {
 	int ac_cat, dc_cat;
 	unsigned int runlength, ac_size;
 	uint16_t dc_info, ac_info;
 	int dc_signum, dc_coeff;
 	int ac_signum, ac_val;
-	size_t i, r;
+	int i, r;
 	int byte_idx, bit_idx;
 
 	bit_idx = 0;
@@ -85,6 +85,9 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 		if (bit_idx > 8) {
 			byte_idx += bit_idx/8;
 			bit_idx %= 8;
+			if (byte_idx > maxlen) {
+				return -1;
+			}
 		}
 
 		/* Decompress the AC coefficients */
@@ -142,6 +145,9 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 			if (bit_idx > 7) {
 				byte_idx += bit_idx/8;
 				bit_idx %= 8;
+				if (byte_idx > maxlen) {
+					return -1;
+				}
 			}
 		}
 	}

@@ -22,10 +22,10 @@ typedef struct {
 	SoftSource *src;
 } Correlator;
 
-static int    correlator_read_aligned(SoftSource *src, int8_t *out, size_t count);
-static void   correlator_deinit_soft(SoftSource *c);
-static int    correlator_soft_correlate(Correlator *c, const int8_t* frame, size_t len);
-static void   correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
+static int  correlator_read_aligned(SoftSource *src, int8_t *out, size_t count);
+static void correlator_deinit_soft(SoftSource *c);
+static int  correlator_soft_correlate(Correlator *c, const int8_t *frame, size_t len);
+static void correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
 
 static void soft_to_hard(uint8_t *dst, const int8_t *src, size_t nbytes);
 static void add_pattern(Correlator *self, const uint8_t *pattern);
@@ -258,6 +258,20 @@ correlator_soft_fix(Correlator *self, int8_t* frame, size_t len)
 	default:
 		break;
 	}
+}
+
+/* Compute the correlation index between two buffers */
+int
+correlation(const uint8_t *x, const uint8_t *y, int len)
+{
+	int i, ret;
+
+	ret = len * 8;
+	for (i=0; i<len; i++) {
+		ret -= count_ones(*x++ ^ *y++);
+	}
+
+	return ret;
 }
 
 /* Static functions {{{*/
