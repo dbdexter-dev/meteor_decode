@@ -16,6 +16,4 @@
 SoftSource* correlator_init_soft(SoftSource *src, uint8_t syncword[8]);
 HardSource* correlator_init_hard(HardSource *src, uint8_t syncword[4]); /* TODO */
 
-int corr_correlation(const uint8_t *x, const uint8_t *y, int len);
-
 #endif

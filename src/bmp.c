@@ -167,8 +167,7 @@ bmp_skip_lines(BmpSink *bmp, int count)
 }
 
 /* Static functions {{{ */
-/* Update the BMP header. Note the negative height: this is because BMP stores
- * pixels left to right, bottom to top, and the image comes in top to bottom */
+/* Update the BMP header */
 static void
 update_header(BmpSink *bmp)
 {
@@ -184,7 +183,7 @@ update_header(BmpSink *bmp)
 
 	dib.dibsize = sizeof(DIBheader);
 	dib.width = PX_PER_ROW;
-	dib.height = -bmp->num_rows;
+	dib.height = bmp->num_rows;
 	dib.num_colorplanes = 1;
 	dib.bits_per_px = BMP_BPP;
 	dib.compression = 0;

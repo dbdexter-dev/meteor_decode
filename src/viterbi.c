@@ -13,7 +13,6 @@ typedef struct state {
 
 typedef struct {
 	int cur_depth;
-	int cur_start;
 	uint8_t outputs[N_STATES][2];
 	Node (*mem)[N_STATES];
 	Node (*tmp)[N_STATES];
@@ -47,7 +46,6 @@ viterbi_init(SoftSource *src)
 	v = safealloc(sizeof(*v));
 	v->src = src;
 	v->cur_depth = 0;
-	v->cur_start = 0;
 
 	v->mem = calloc(N_STATES, sizeof(*v->mem));
 	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
@@ -215,46 +213,39 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 /* For any given end state, find the previous state that gets to it with the
  * least effort */
 static void
-update_costs(const Viterbi *const self, int8_t x, int8_t y)
+update_costs(const Viterbi *self, int8_t x, int8_t y)
 {
 	Node *end_state;
 	int id;
-	int start_state, prev;
+	int candidate_1, candidate_2;
+	int cost_1, cost_2;
 	uint8_t input;
-	uint16_t tmpcost, mincost;
 
 
 	for (id=0; id<N_STATES; id++) {
-		mincost = (uint16_t) -1;
 		end_state = self->tmp[id];
 
 		/* Compute the input necessary to get to end_state */
-		input = id >> (K-1) & 0x01;
+		input = id >> (K-1);
 
-		/* Try with candidate #1 */
-		start_state = ((id << 1) & (N_STATES - 1));
-		tmpcost = cost(x, y, self->outputs[start_state][input]);
-		if (self->mem[start_state]->cost < MAX_COST) {
-			mincost = self->mem[start_state]->cost + tmpcost;
-			prev = start_state;
-		}
+		/* Compute the costs from the two possible ancestors */
+		candidate_1 = ((id << 1) & (N_STATES - 1));
+		candidate_2 = candidate_1+1;
+		cost_1 = self->mem[candidate_1]->cost +
+		         cost(x, y, self->outputs[candidate_1][input]);
+		cost_2 = self->mem[candidate_2]->cost +
+		         cost(x, y, self->outputs[candidate_2][input]);
 
-		/* Try with candidate #2 */
-		start_state++;
-		tmpcost = cost(x, y, self->outputs[start_state][input]);
-		if (self->mem[start_state]->cost + tmpcost < mincost) {
-			mincost = self->mem[start_state]->cost + tmpcost;
-			prev = start_state;
-		}
-
-		/* If an ancestor was found, copy its data and fix the metadata */
-		/* NOTE: self->cur_depth is a count, not an index. It's index+1 */
-		if (mincost < MAX_COST) {
-			memcpy(end_state->data, self->mem[prev]->data, self->cur_depth);
+		if (cost_1 < cost_2) {
+			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth);
 			end_state->data[self->cur_depth] = input;
-			end_state->cost = mincost;
+			end_state->cost = cost_1;
+		} else if (cost_2 < MAX_COST) {
+			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth);
+			end_state->data[self->cur_depth] = input;
+			end_state->cost = cost_2;
 		} else {
-			end_state->cost = (uint16_t) -1;
+			end_state->cost = MAX_COST;
 		}
 	}
 }

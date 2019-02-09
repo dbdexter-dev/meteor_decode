@@ -96,9 +96,7 @@ pkt_read(Packetizer *self, Segment *seg)
 
 		/* Corrupted packets might get here for some reason, so this avoids
 		 * segfaults from the upcoming memcpy */
-		if (bytes_out < 0 || bytes_out > MPDU_HDR_SIZE) {
-			bytes_out = MAX(0, MIN(MPDU_HDR_SIZE, bytes_out));
-		}
+		bytes_out = MAX(0, MIN(MPDU_HDR_SIZE, bytes_out));
 
 		memcpy(&frag_hdr, mpdu, bytes_out);
 

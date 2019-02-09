@@ -74,7 +74,7 @@ tui_update_phys(uint32_t syncword, int rs_count, int total, int recv_count)
 	/* Avoid DIV0 */
 	total = total ? total : 0;
 	wprintw(tui.phys, "Recovery rate:   %.1f%%\n", (float)recv_count/total*100);
-	wprintw(tui.phys, "Syncword:  0x%08x\n", syncword);
+	wprintw(tui.phys, "Syncword:  0x%08X\n", syncword);
 	if (rs_count < 0) {
 		wprintw(tui.phys, "RS errors: N/A\n");
 	} else {
