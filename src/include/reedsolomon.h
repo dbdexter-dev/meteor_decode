@@ -1,5 +1,8 @@
-/* See https://public.ccsds.org/Pubs/101x0b4s.pdf for more info on the
- * Reed-Solomon code parameters in use */
+/**
+ * Reed-Solomon error detection and correction functions.
+ * See https://public.ccsds.org/Pubs/101x0b4s.pdf for more info on the
+ * Reed-Solomon code parameters in use 
+ */
 
 #ifndef LRPTDEC_RS_H
 #define LRPTDEC_RS_H
@@ -22,9 +25,9 @@ typedef struct {
 	uint8_t poly_zeroes[RS_2T];
 } ReedSolomon;
 
-ReedSolomon *rs_init(size_t data_size, int interleaving);
+ReedSolomon* rs_init(size_t data_size, int interleaving);
 void         rs_deinit(ReedSolomon *r);
 
-int rs_fix_packet(ReedSolomon *self, Cvcdu *c, int *corr_info);
+int rs_fix_packet(ReedSolomon *self, Vcdu *c);
 
 #endif

@@ -1,37 +1,39 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 #include "bmp.h"
-#include "compositor.h"
-#include "correlator.h"
+#include "decoder.h"
 #include "file.h"
-#include "huffman.h"
 #include "options.h"
-#include "packetizer.h"
-#include "reedsolomon.h"
+#include "tui.h"
 #include "utils.h"
-#include "viterbi.h"
 
 int
 main(int argc, char *argv[])
 {
 	int c;
-	SoftSource *softsamples, *correlator;
-	HardSource *viterbi;
-	Packetizer *pp;
+	SoftSource *softsamples;
 	BmpSink *bmp;
-	Compositor *comp;
-	Segment seg;
-	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+	Decoder *decoder;
+	struct timespec timespec;
+
 	/* Command-line changeable variables {{{*/
+	int apid_list[3];
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
-	int (*log) (const char *msg, ...);
+	int upd_interval;
+	int (*log)(const char *msg, ...);
 	/*}}}*/
 	/* Initialize command-line overridable parameters {{{*/
+	log = tui_print_info;
 	out_fname = NULL;
 	free_fname_on_exit = 0;
-	log = printf;
+	apid_list[0] = 68;
+	apid_list[1] = 65;
+	apid_list[2] = 64;
+	upd_interval = 150;
 	/*}}}*/
 	/* Parse command line args {{{ */
 	if (argc < 2) {
@@ -40,6 +42,9 @@ main(int argc, char *argv[])
 	optind = 0;
 	while ((c = getopt_long(argc, argv, SHORTOPTS, longopts, NULL)) != -1) {
 		switch(c) {
+		case 'a':
+			parse_apids(apid_list, optarg);
+			break;
 		case 'h':
 			usage(argv[0]);
 			break;
@@ -58,44 +63,57 @@ main(int argc, char *argv[])
 	}
 
 	in_fname = argv[optind];
-	/*}}}*/
 
 	if (!out_fname) {
 		out_fname = gen_fname(-1);
 		free_fname_on_exit = 1;
 	}
+	/*}}}*/
 
-	/* Let the dance begin! */
+	/* Initialize the UI */
+	splash();
+	tui_init(upd_interval);
+
+	/* Open the two endpoints of the chain - the soft samples input and the BMP
+	 * image output */
 	softsamples = src_soft_open(in_fname, 8);
-	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
-	correlator = correlator_init_soft(softsamples, encoded_syncword);
-	viterbi = viterbi_init(correlator);
-	pp = pkt_init(viterbi);
-
 	bmp = bmp_open(out_fname);
-	comp = comp_init(bmp, 0);
 
-	huffman_init();
-	while(pkt_read(pp, &seg)){
-		if (seg.len > 0) {
-/*			log("seq=%d len=%d APID=%d, tstamp=%x\n", seg.seq, seg.len,*/
-/*			    seg.apid, seg.timestamp);*/
-/*			hexdump("Data", seg.data, seg.len);*/
-			if (seg.apid == 68) {
-				comp_compose(comp, &seg);
-			}
-		} else {
-			printf("VCDU lost\n");
+	decoder = decoder_init(bmp, softsamples, apid_list);
+	decoder_start(decoder);
+
+	timespec.tv_sec = upd_interval/1000;
+	timespec.tv_nsec = ((upd_interval - timespec.tv_sec*1000))*1000L*1000;
+
+	log("Decoder initialized\n");
+
+	while (decoder_get_status(decoder)) {
+		if (tui_process_input()) {
+			break;
 		}
+		tui_update_phys(decoder_get_syncword(decoder),
+		                decoder_get_rs_count(decoder),
+		                decoder_get_total_count(decoder),
+		                decoder_get_valid_count(decoder));
+		tui_update_pktinfo(decoder_get_seq(decoder),
+		                   decoder_get_apid(decoder),
+		                   decoder_get_time(decoder));
+/*		printf("0x%08X\t rs=%2d, APID %d, onboard time: %s\r",*/
+/*		       decoder_get_syncword(decoder),*/
+/*		       decoder_get_rs_count(decoder),*/
+/*		       decoder_get_apid(decoder),*/
+/*		       timeofday(decoder_get_time(decoder))*/
+/*		       );*/
+/*		fflush(stdout);*/
 	}
 
-	bmp_close(bmp);
+	log("Press any key to exit\n");
+	tui_wait_for_user_input();
+	tui_deinit();
 
-	comp_deinit(comp);
-	pkt_deinit(pp);
-	viterbi->close(viterbi);
-	correlator->close(correlator);
+	bmp_close(bmp);
 	softsamples->close(softsamples);
+	decoder_deinit(decoder);
 
 	if (free_fname_on_exit) {
 		free(out_fname);

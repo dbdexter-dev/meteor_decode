@@ -1,3 +1,7 @@
+/**
+ * Deals with packet reconstruction, since MPDUs might span multiple VCDUs and
+ * be fragmented between them. It's kinda like defragmenting TCP frames.
+ */
 #ifndef LRPTDEC_PACKETIZER_H
 #define LRPTDEC_PACKETIZER_H
 
@@ -23,11 +27,12 @@ typedef struct {
 	void *next_header;
 	uint8_t cadu[sizeof(Cadu)];
 	ReedSolomon *rs;
+	int rs_fix_count;
 	HardSource *src;
 } Packetizer;
 
 Packetizer* pkt_init(HardSource *src);
-void          pkt_deinit(Packetizer *pp);
+void        pkt_deinit(Packetizer *pp);
 
 int pkt_read(Packetizer *pp, Segment *seg);
 

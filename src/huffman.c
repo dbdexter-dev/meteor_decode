@@ -11,11 +11,12 @@ static int      get_dc_cat(uint16_t codeword);
 static int      get_ac_cat(uint16_t codeword);
 static uint32_t get_bits(const uint8_t *ptr, int bit_offset, int nbits);
 
+static uint8_t   _ac_table[65535];
 static const int _cat_prefix_size[12] = {2, 3, 3, 3, 3, 3, 4, 5, 6, 7, 8, 9};
 static const int _max_range[12] = {0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047};
 static const int _min_range[12] = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
 static const int _compressed_table_counts[16] = {0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 125};
-static const int _compressed_table[168] =
+static const int _compressed_table[162] =
 {
 	1, 2,
 	3,
@@ -39,8 +40,6 @@ static const int _compressed_table[168] =
 	233, 234, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250
 };
 
-static uint8_t   _ac_table[65535];
-
 void
 huffman_init()
 {
@@ -49,14 +48,14 @@ huffman_init()
 
 /* RLE and Huffman together, this is a monstrosity */
 int
-huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
+huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, int count, int maxlen)
 {
 	int ac_cat, dc_cat;
 	unsigned int runlength, ac_size;
-	uint32_t dc_info, ac_info;
+	uint16_t dc_info, ac_info;
 	int dc_signum, dc_coeff;
 	int ac_signum, ac_val;
-	size_t i, r;
+	int i, r;
 	int byte_idx, bit_idx;
 
 	bit_idx = 0;
@@ -86,6 +85,9 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 		if (bit_idx > 8) {
 			byte_idx += bit_idx/8;
 			bit_idx %= 8;
+			if (byte_idx > maxlen) {
+				return -1;
+			}
 		}
 
 		/* Decompress the AC coefficients */
@@ -98,9 +100,14 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 				/* Not a valid code yet: fetch another bit */
 				ac_info = (ac_info << 1) | get_bits(src+byte_idx, bit_idx, 1);
 				bit_idx++;
-				if (ac_info > 65535) {
-					return -1;
+				if (ac_info == 65535) {
+					ac_info = 0;
 				}
+			}
+
+			if (bit_idx > 7) {
+				byte_idx += bit_idx/8;
+				bit_idx %= 8;
 			}
 
 			/* EOB sequence, 4 bits long */
@@ -115,8 +122,9 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 
 				/* Extract the AC value */
 				ac_signum = get_bits(src+byte_idx, bit_idx, 1);
-				ac_val = get_bits(src+byte_idx, bit_idx, ac_size-1);
+				ac_val = get_bits(src+byte_idx, bit_idx+1, ac_size-1);
 
+				/* signum = 0 -> lower range, signum = 1 -> upper range */
 				if (ac_signum) {
 					ac_val += _min_range[ac_size];
 				} else {
@@ -137,10 +145,13 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, size_t count)
 			if (bit_idx > 7) {
 				byte_idx += bit_idx/8;
 				bit_idx %= 8;
+				if (byte_idx > maxlen) {
+					return -1;
+				}
 			}
 		}
 	}
-	return 0;
+	return byte_idx;
 }
 
 /* Static functions {{{ */
@@ -154,13 +165,13 @@ get_bits(const uint8_t *ptr, int bit_offset, int nbits)
 	msk = (1<<nbits)-1;
 
 	i = 0;
-	while (bit_offset >= 8) {
-		i++;
+	while (bit_offset > 7) {
+		ptr++;
 		bit_offset -= 8;
 	}
 
 	/* Read the first fragment from the first byte */
-	ret = (ptr[i] & ((1<<(8-bit_offset))-1)) >> MAX(0, 8 - bit_offset - nbits);
+	ret = (ptr[0] & ((1<<(8-bit_offset))-1)) >> MAX(0, 8 - bit_offset - nbits);
 	nbits -= 8-bit_offset;
 
 	/* Append full bytes from the middle of the selected bit range */

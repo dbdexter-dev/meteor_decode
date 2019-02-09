@@ -6,36 +6,31 @@
 #include "utils.h"
 #include "viterbi.h"
 
-typedef struct {
-	uint8_t output;
-	unsigned int next_state;
-} Transition;
-
 typedef struct state {
-	unsigned int cost;
+	uint16_t cost;
 	uint8_t data[MEM_DEPTH+1];
-} Path;
+} Node;
 
 typedef struct {
 	int cur_depth;
-	Transition trans[N_STATES][2];
-	Path (*mem)[N_STATES];
-	Path (*tmp)[N_STATES];
+	uint8_t outputs[N_STATES][2];
+	Node (*mem)[N_STATES];
+	Node (*tmp)[N_STATES];
 	SoftSource *src;
 } Viterbi;
 
 static void compute_trans(Viterbi *v);
-static int  find_best(const Viterbi *self, int8_t x, int8_t y, Path *end_state, int id);
 static int  parity(uint8_t x);
-static int  write_bits(const uint8_t *bits, size_t count, uint8_t *out);
-static int  viterbi_deinit(HardSource *v);
+static void update_costs(const Viterbi *self, int8_t x, int8_t y);
+static void viterbi_deinit(HardSource *v);
 static int  viterbi_decode(HardSource *v, uint8_t *out, size_t count);
 static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
+static int  write_bits(uint8_t *out, const uint8_t *bits, size_t count);
 
-static unsigned int cost(int8_t x, int8_t y, int coding);
+static inline unsigned int cost(int8_t x, int8_t y, uint8_t coding);
 
-static unsigned int _cost_lut[256][4];
-static int _initialized = 0;
+static unsigned int _cost_lut[256][2];
+static int          _initialized = 0;
 
 HardSource*
 viterbi_init(SoftSource *src)
@@ -56,11 +51,11 @@ viterbi_init(SoftSource *src)
 	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
 
 	if (!_initialized) {
-		for (i=-128; i<127; i++) {
+		for (i=-128; i<128; i++) {
 			_cost_lut[(uint8_t)i][0] = i + 128;
 			_cost_lut[(uint8_t)i][1] = abs(i-127);
-			_cost_lut[(uint8_t)i][2] = abs(i-127);
 		}
+		_initialized = 1;
 	}
 
 	ret->_backend = v;
@@ -71,7 +66,7 @@ viterbi_init(SoftSource *src)
 	return ret;
 }
 
-static int
+static void
 viterbi_deinit(HardSource *src)
 {
 	Viterbi *v = src->_backend;
@@ -79,8 +74,7 @@ viterbi_deinit(HardSource *src)
 	free(v->mem);
 	free(v->tmp);
 	free(v);
-
-	return 0;
+	free(src);
 }
 
 int
@@ -88,11 +82,11 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 {
 	int fwd_depth;
 	int in_pos, points_in, bytes_out;
-	int i, count, cur_state;
+	int i, count;
 	int8_t in[2*MEM_DEPTH];
 	unsigned int mincost;
 	int8_t x, y;
-	Path *best, (*tmp)[N_STATES];
+	Node *best, (*tmp)[N_STATES];
 	Viterbi *self = src->_backend;
 
 	/* Len must be a multiple of 8 */
@@ -106,23 +100,15 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 		/* Calculate how deep to go and how many bytes to read */
 		fwd_depth = (size_t)(MEM_DEPTH - self->cur_depth);
 		points_in = self->src->read(self->src, in, 2*fwd_depth)/2;
-		if (points_in < fwd_depth) {
-			/* We reached the end of the source, next run just flush the viterbi
-			 * memory instead of doing the whole algorithm */
-			return viterbi_flush(src, out, len);
-		}
-		fwd_depth = points_in;
 
 		/* Run the Viterbi algorithm forward */
-		for (i=0, in_pos=0; i<(int)fwd_depth; i++) {
+		for (i=0, in_pos=0; i<(int)points_in; i++) {
 			/* Get a symbol from the source */
 			x = in[in_pos++];
 			y = in[in_pos++];
 
-			/* For each state, find the path of least resistance to it */
-			for (cur_state = 0; cur_state < N_STATES; cur_state++) {
-				find_best(self, x, y, self->tmp[cur_state], cur_state);
-			}
+			/* Update the costs to be in each state given the input we have */
+			update_costs(self, x, y);
 
 			/* Update the Viterbi decoder memory (swap tmp and mem) */
 			tmp = self->mem;
@@ -140,10 +126,17 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			}
 		}
 
+		if (points_in < fwd_depth) {
+			/* We reached the end of the source: just flush the Viterbi memory
+			 * instead of doing the whole algorithm */
+			return viterbi_flush(src, out, len);
+		}
+
 		/* Write out depth - BACKTRACK_DEPTH bits */
 		if (self->cur_depth > (int)BACKTRACK_DEPTH) {
 			count = self->cur_depth - BACKTRACK_DEPTH;
-			i = write_bits(best->data, count, out + bytes_out);
+			i = write_bits(out, best->data, count);
+			out += i;
 			bytes_out += i;
 
 			/* Realign data and normalize the costs */
@@ -165,7 +158,7 @@ int
 viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen)
 {
 	int i;
-	Path *best;
+	Node *best;
 	Viterbi *self = v->_backend;
 
 	if (self->cur_depth <= 0) {
@@ -181,7 +174,7 @@ viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen)
 	}
 
 	/* Write out BACKTRACK_DEPTH bits */
-	i = write_bits(best->data, MIN(maxlen, (size_t)self->cur_depth), out);
+	i = write_bits(out, best->data, MIN(maxlen, (size_t)self->cur_depth));
 
 	self->cur_depth = 0;
 	return i;
@@ -217,48 +210,44 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 }
 
 /* Static functions {{{*/
-/* Given an end state, find the previous state that gets to it with the least
- * effort */
-static int
-find_best(const Viterbi *const self, int8_t x, int8_t y, Path *end_state, int id)
+/* For any given end state, find the previous state that gets to it with the
+ * least effort */
+static void
+update_costs(const Viterbi *self, int8_t x, int8_t y)
 {
-	int start_state, prev;
+	Node *end_state;
+	int id;
+	int candidate_1, candidate_2;
+	int cost_1, cost_2;
 	uint8_t input;
-	unsigned int tmpcost, mincost;
-
-	mincost = (unsigned int) -1;
-
-	/* Compute the input necessary to get to end_state */
-	input = id >> (K-1);
 
 
-	/* Try with candidate #1 */
-	start_state = ((id << 1) & (N_STATES - 1)) | 0x00;
-	tmpcost = cost(x, y, self->trans[start_state][input].output);
-	if (self->mem[start_state]->cost + tmpcost < MAX_COST) {
-		mincost = self->mem[start_state]->cost + tmpcost;
-		prev = start_state;
+	for (id=0; id<N_STATES; id++) {
+		end_state = self->tmp[id];
+
+		/* Compute the input necessary to get to end_state */
+		input = id >> (K-1);
+
+		/* Compute the costs from the two possible ancestors */
+		candidate_1 = ((id << 1) & (N_STATES - 1));
+		candidate_2 = candidate_1+1;
+		cost_1 = self->mem[candidate_1]->cost +
+		         cost(x, y, self->outputs[candidate_1][input]);
+		cost_2 = self->mem[candidate_2]->cost +
+		         cost(x, y, self->outputs[candidate_2][input]);
+
+		if (cost_1 < cost_2) {
+			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth);
+			end_state->data[self->cur_depth] = input;
+			end_state->cost = cost_1;
+		} else if (cost_2 < MAX_COST) {
+			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth);
+			end_state->data[self->cur_depth] = input;
+			end_state->cost = cost_2;
+		} else {
+			end_state->cost = MAX_COST;
+		}
 	}
-
-	/* Try with candidate #2 */
-	start_state = ((id << 1) & (N_STATES - 1)) | 0x01;
-	tmpcost = cost(x, y, self->trans[start_state][input].output);
-	if (self->mem[start_state]->cost + tmpcost < mincost) {
-		mincost = self->mem[start_state]->cost + tmpcost;
-		prev = start_state;
-	}
-
-	/* If an ancestor was found, copy its data and fix the metadata */
-	/* NOTE: self->cur_depth is a count, not an index. It's index+1 */
-	if (mincost < MAX_COST) {
-		memcpy(end_state->data, self->mem[prev]->data, self->cur_depth);
-		end_state->data[self->cur_depth] = input;
-		end_state->cost = mincost;
-	} else {
-		end_state->cost = (unsigned int) -1;
-	}
-
-	return 0;
 }
 
 /* Precompute the transition function */
@@ -268,24 +257,21 @@ compute_trans(Viterbi *v)
 	int state, input;
 	int output, next;
 
-
 	for (state=0; state<N_STATES; state++) {
 		for (input=0; input<2; input++) {
 			next = (state >> 1) | ((input & 0x01) << (K-1));
 			output = parity(next & G1) << 1 | parity(next & G2);
 
-			v->trans[state][input].output = output;
-			v->trans[state][input].next_state = next;
+			v->outputs[state][input] = output;
 		}
 	}
-
 }
 
 /* Cost function */
-static unsigned int
-cost(int8_t x, int8_t y, int coding)
+static inline unsigned int
+cost(int8_t x, int8_t y, uint8_t coding)
 {
-	return _cost_lut[(uint8_t)x][coding & 0x02] +
+	return _cost_lut[(uint8_t)x][(coding >> 1) & 0x01] +
 	       _cost_lut[(uint8_t)y][coding & 0x01];
 }
 
@@ -299,12 +285,11 @@ parity(uint8_t x)
 	}
 
 	return ret & 0x01;
-
 }
 
 /* From a uint8_t array of single bits to a compact uint8_t array of bytes */
 static int
-write_bits(const uint8_t *bits, size_t count, uint8_t *out)
+write_bits(uint8_t *out, const uint8_t *bits, size_t count)
 {
 	size_t i;
 	int bytes_out;

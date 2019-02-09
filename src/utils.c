@@ -6,6 +6,20 @@
 
 static char _time_of_day[sizeof("HH:MM:SS.mmm")];
 
+
+/* Count the ones in a uint8_t */
+int
+count_ones(uint8_t val)
+{
+	int i, ret;
+
+	ret = 0;
+	for (i=0; i<8; i++) {
+		ret += (val >> i) & 0x01;
+	}
+	return ret;
+}
+
 void
 fatal(char *msg)
 {
@@ -38,6 +52,13 @@ gen_fname(int apid)
 	free(tmp);
 
 	return ret;
+}
+
+/* Parse the APID list */
+void
+parse_apids(int *apid_list, char *raw)
+{
+	sscanf(raw, "%d,%d,%d", apid_list, apid_list+1, apid_list+2);
 }
 
 /* Malloc with abort on error */
@@ -81,6 +102,7 @@ usage(const char *pname)
 	splash();
 	fprintf(stderr, "Usage: %s [options] file_in\n", pname);
 	fprintf(stderr,
+			"   -a, --apid R,G,B        Specify APIDs to parse (default: 68,65,64)\n"
 			"   -o, --output <file>     Output composite bmp to <file>\n"
 			"\n"
 			"   -h, --help              Print this help screen\n"

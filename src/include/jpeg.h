@@ -1,3 +1,6 @@
+/**
+ * Auxiliary functions to help with decoding JPG thumbnails into raw pixels.
+ */
 #ifndef LRPTDEC_JPEG_H
 #define LRPTDEC_JPEG_H
 

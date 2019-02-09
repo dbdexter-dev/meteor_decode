@@ -1,3 +1,8 @@
+/**
+ * Viterbi decoder for a (1/2, 7) convolutional coding scheme. Given a
+ * convolutionally coded SoftSource*, outputs the most likely sequence that
+ * originated it as a HardSource*.
+ */
 #ifndef LRPTDEC_VITERBI_H
 #define LRPTDEC_VITERBI_H
 
@@ -10,9 +15,9 @@
 #define G2 0x5B
 
 #define N_STATES (1 << K)
-#define MEM_DEPTH (N_STATES)
-#define MAX_COST (MEM_DEPTH * 512)
-#define BACKTRACK_DEPTH ((N_STATES/2) & 0xFFFFFFF8)
+#define MEM_DEPTH (N_STATES/2)
+#define MAX_COST (MEM_DEPTH * 256)
+#define BACKTRACK_DEPTH ((MEM_DEPTH-32) & 0xFFFFFFF8)
 #define VITERBI_DELAY (MEM_DEPTH - BACKTRACK_DEPTH)
 
 HardSource* viterbi_init(SoftSource *src);
