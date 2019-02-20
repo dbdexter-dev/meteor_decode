@@ -68,12 +68,10 @@ tui_update_phys(uint32_t syncword, int rs_count, int total, int recv_count)
 	werase(tui.phys);
 	wmove(tui.phys, 0, 0);
 	wattrset(tui.phys, A_BOLD);
-	wprintw(tui.phys, "Physical layer\n");
+	wprintw(tui.phys, "Data link layer\n");
 	wattroff(tui.phys, A_BOLD);
-	wprintw(tui.phys, "Dropped packets: %d/%d\n", total - recv_count, total);
-	/* Avoid DIV0 */
-	total = total ? total : 0;
-	wprintw(tui.phys, "Recovery rate:   %.1f%%\n", (float)recv_count/total*100);
+	wprintw(tui.phys, "Total frames: %d\n", total);
+	wprintw(tui.phys, "Valid frames: %d\n", recv_count);
 	wprintw(tui.phys, "Syncword:  0x%08X\n", syncword);
 	if (rs_count < 0) {
 		wprintw(tui.phys, "RS errors: N/A\n");

@@ -91,8 +91,6 @@ pixelgen_append(PixelGen *self, const Segment *seg)
 		} else {
 			self->pkt_end = seg->seq + 3*MPDU_PER_LINE+1;
 		}
-
-
 	}
 
 }

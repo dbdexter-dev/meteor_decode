@@ -112,8 +112,8 @@ main(int argc, char *argv[])
 	tui_deinit();
 
 	bmp_close(bmp);
-	softsamples->close(softsamples);
 	decoder_deinit(decoder);
+	softsamples->close(softsamples);
 
 	if (free_fname_on_exit) {
 		free(out_fname);

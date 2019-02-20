@@ -55,6 +55,7 @@ decoder_deinit(Decoder *self)
 	pkt_deinit(self->pp);
 	self->viterbi->close(self->viterbi);
 	self->correlator->close(self->correlator);
+	free(self);
 }
 
 void
@@ -129,13 +130,14 @@ decoder_thr_run(void *arg)
 	while (self->running && pkt_read(self->pp, &seg)) {
 		self->total_count++;
 		/* Skip invalid packets */
-		if (seg.len <= 0) {
+		if (seg.len <= 0 || seg.apid == 0) {
 			continue;
 		}
 		self->valid_count++;
 
 		/* Skip packets that are not images from the AVHRR */
 		if (seg.apid < 64 || seg.apid >= 70) {
+			self->seq = seg.seq;
 			continue;
 		}
 
@@ -144,11 +146,22 @@ decoder_thr_run(void *arg)
 		seq_delta = (seg.seq - self->seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
 
 		/* Compensate for lost MCUs */
+		int check_zero = 0;
 		if (self->seq > 0 && seq_delta > 1) {
 			align_okay = 0;
+			for (ch=0; ch<3; ch++) {
+				if (self->pxgen[ch]->mcu_nr != 0) {
+					check_zero = 1;
+				}
+			}
 			while (!align_okay) {
+				/* Realign all channels, filling with black MCUs until one of
+				 * them is aligned to the current sequence number */
 				for (ch=0; ch<3; ch++) {
 					cur_gen = self->pxgen[ch];
+					if (cur_gen->mcu_nr == 0 && check_zero) {
+						continue;
+					}
 					if (cur_gen->pkt_end < seg.seq || cur_gen->pkt_end - seg.seq > MPDU_MAX_SEQ/2) {
 						for (i=cur_gen->mcu_nr; i<MCU_PER_PP; i += MCU_PER_MPDU) {
 							pixelgen_append(cur_gen, NULL);
@@ -159,9 +172,11 @@ decoder_thr_run(void *arg)
 						align_okay = 1;
 					}
 				}
+				check_zero = 0;
 			}
 		}
 
+		self->seq = seg.seq;
 		self->apid = seg.apid;
 		self->last_tstamp = seg.timestamp;
 
@@ -176,7 +191,6 @@ decoder_thr_run(void *arg)
 			}
 		}
 
-		self->seq = seg.seq;
 	}
 
 	self->running = 0;

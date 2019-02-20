@@ -197,12 +197,10 @@ pkt_read(Packetizer *self, Segment *seg)
 }
 
 /* Static functions {{{*/
-/* Byte by byte, xor the packet with the added noise */
 static int
 retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 {
 	int bytes_in;
-	int rs_fix_count;
 
 	bytes_in = src->read(src, (uint8_t*)dst, sizeof(*dst));
 	if (bytes_in < (int)sizeof(*dst)) {
@@ -212,13 +210,7 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 
 	/* Descramble and error-correct the vcdu */
 	descramble(&dst->cvcdu);
-	rs_fix_count = rs_fix_packet(rs, &dst->cvcdu);
-
-	if(rs_fix_count < 0) {
-		/* Unfixable frame */
-		return -1;
-	}
-	return rs_fix_count;
+	return rs_fix_packet(rs, &dst->cvcdu);
 }
 
 /* XOR with the precomputed output of the LFSR */

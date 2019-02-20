@@ -109,7 +109,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 	 * buffer */
 	if (self->buffer_offset) {
 		bytes_out = MIN(count, SOFT_FRAME_SIZE - self->buffer_offset);
-		memcpy(out, self->buffer + self->buffer_offset, bytes_out);
+		memcpy(out, self->buffer+self->frame_offset+self->buffer_offset, bytes_out);
 
 		self->buffer_offset = (self->buffer_offset+bytes_out)%SOFT_FRAME_SIZE;
 		out += bytes_out;
@@ -123,7 +123,7 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 		/* If there aren't enough bytes left, fix the frame and return */
 		if (bytes_in < (int)SOFT_FRAME_SIZE) {
 			correlator_soft_fix(self, self->buffer, bytes_in);
-			memcpy(out, self->buffer + bytes_out, MIN(bytes_in, count));
+			memcpy(out, self->buffer, MIN(bytes_in, count));
 			if (count < bytes_in) {
 				self->buffer_offset = count;
 			}
@@ -145,12 +145,12 @@ correlator_read_aligned(SoftSource *src, int8_t *out, size_t count)
 		/* TODO: this might copy some garbage at the end, but whatever, it would
 		 * only be for the very last iteration. I'll fix it at some point :P */
 		if (count < SOFT_FRAME_SIZE) {
-			memcpy(out, self->buffer+self->frame_offset+bytes_out, count);
+			memcpy(out, self->buffer+self->frame_offset, count);
 			self->buffer_offset = count;
 			return bytes_out + count;
 		}
 
-		memcpy(out, self->buffer+self->frame_offset+bytes_out, SOFT_FRAME_SIZE);
+		memcpy(out, self->buffer+self->frame_offset, SOFT_FRAME_SIZE);
 
 		out += SOFT_FRAME_SIZE;
 		bytes_out += SOFT_FRAME_SIZE;
@@ -183,7 +183,6 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 		tmp_corr = qw_correlate(hard_frame, self->patterns[pattern]);
 		if (tmp_corr >= CORRELATION_THR - 5) {
 			self->active_correction = pattern;
-			max_corr_pos = 0;
 			free(correlation);
 			free(corr_pos);
 			free(hard_frame);
