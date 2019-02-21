@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "packet.h"
@@ -200,7 +201,7 @@ pkt_read(Packetizer *self, Segment *seg)
 static int
 retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 {
-	int bytes_in;
+	int bytes_in, rs_count;
 
 	bytes_in = src->read(src, (uint8_t*)dst, sizeof(*dst));
 	if (bytes_in < (int)sizeof(*dst)) {
@@ -208,9 +209,13 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 		return -2;
 	}
 
+
 	/* Descramble and error-correct the vcdu */
 	descramble(&dst->cvcdu);
-	return rs_fix_packet(rs, &dst->cvcdu);
+	rs_count = rs_fix_packet(rs, &dst->cvcdu);
+	printf("\n0x%08X  rs=%d", dst->sync_marker, rs_count);
+
+	return rs_count;
 }
 
 /* XOR with the precomputed output of the LFSR */

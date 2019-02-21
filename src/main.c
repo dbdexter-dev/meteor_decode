@@ -4,36 +4,41 @@
 #include <time.h>
 #include <unistd.h>
 #include "bmp.h"
-#include "decoder.h"
+#include "correlator.h"
 #include "file.h"
 #include "options.h"
-#include "tui.h"
+#include "packetizer.h"
+#include "pixels.h"
+#include "reedsolomon.h"
 #include "utils.h"
+#include "viterbi.h"
 
 int
 main(int argc, char *argv[])
 {
-	int c;
-	SoftSource *softsamples;
+	int i, c, ch;
+	int total_count, valid_count, mcu_nr, seq_delta, last_seq;
+	int align_okay, check_zero;
+	SoftSource *src, *correlator;
+	HardSource *viterbi;
+	Packetizer *pp;
+	PixelGen *pxgen[3], *cur_gen;
 	BmpSink *bmp;
-	Decoder *decoder;
-	struct timespec timespec;
+	Segment seg;
+	Mcu *mcu;
+	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
 
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
-	int upd_interval;
-	int (*log)(const char *msg, ...);
 	/*}}}*/
 	/* Initialize command-line overridable parameters {{{*/
-	log = tui_print_info;
 	out_fname = NULL;
 	free_fname_on_exit = 0;
 	apid_list[0] = 68;
 	apid_list[1] = 65;
 	apid_list[2] = 64;
-	upd_interval = 150;
 	/*}}}*/
 	/* Parse command line args {{{ */
 	if (argc < 2) {
@@ -70,50 +75,102 @@ main(int argc, char *argv[])
 	}
 	/*}}}*/
 
-	/* Initialize the UI */
 	splash();
-	tui_init(upd_interval);
 
-	/* Open the two endpoints of the chain - the soft samples input and the BMP
-	 * image output */
-	softsamples = src_soft_open(in_fname, 8);
+	src = src_soft_open(in_fname, 8);
+	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
+	correlator = correlator_init_soft(src, encoded_syncword);
+	viterbi = viterbi_init(correlator);
+	pp = pkt_init(viterbi);
 	bmp = bmp_open(out_fname);
 
-	decoder = decoder_init(bmp, softsamples, apid_list);
-	decoder_start(decoder);
+	pxgen[0] = pixelgen_init(bmp, RED);
+	pxgen[1] = pixelgen_init(bmp, GREEN);
+	pxgen[2] = pixelgen_init(bmp, BLUE);
 
-	timespec.tv_sec = upd_interval/1000;
-	timespec.tv_nsec = ((upd_interval - timespec.tv_sec*1000))*1000L*1000;
-
-	log("Decoder initialized\n");
-
-	while (decoder_get_status(decoder)) {
-		if (tui_process_input()) {
-			break;
+	last_seq = -1;
+	total_count = 0;
+	valid_count = 0;
+	while (pkt_read(pp, &seg)) {
+		total_count++;
+		/* Skip invalid packets */
+		if (seg.len <= 0 || seg.apid == 0) {
+			continue;
 		}
-		tui_update_phys(decoder_get_syncword(decoder),
-		                decoder_get_rs_count(decoder),
-		                decoder_get_total_count(decoder),
-		                decoder_get_valid_count(decoder));
-		tui_update_pktinfo(decoder_get_seq(decoder),
-		                   decoder_get_apid(decoder),
-		                   decoder_get_time(decoder));
-/*		printf("0x%08X\t rs=%2d, APID %d, onboard time: %s\r",*/
-/*		       decoder_get_syncword(decoder),*/
-/*		       decoder_get_rs_count(decoder),*/
-/*		       decoder_get_apid(decoder),*/
-/*		       timeofday(decoder_get_time(decoder))*/
-/*		       );*/
-/*		fflush(stdout);*/
+		valid_count++;
+
+		printf("\nseq %5d, APID %d %s",
+		       seg.seq,
+		       seg.apid,
+		       timeofday(seg.timestamp));
+
+		/* Skip packets that are not images from the AVHRR */
+		if (seg.apid < 64 || seg.apid >= 70) {
+			continue;
+		}
+
+		mcu = (Mcu*)seg.data;
+		mcu_nr = mcu_seq(mcu);
+		seq_delta = (seg.seq - last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
+
+		/* Compensate for lost MCUs */
+		if (last_seq > 0 && seq_delta > 1) {
+			align_okay = 0;
+			check_zero = 0;
+
+			/* check_zero is a flag used to prevent channels that don't need to
+			 * be aligned from going out of sync */
+			for (ch=0; ch<3; ch++) {
+				if (pxgen[ch]->mcu_nr != 0) {
+					check_zero = 1;
+				}
+			}
+
+			while (!align_okay) {
+				/* Realign all channels, filling with black MCUs until one of
+				 * them is aligned to the current sequence number */
+				for (ch=0; ch<3; ch++) {
+					cur_gen = pxgen[ch];
+					if (cur_gen->mcu_nr == 0 && check_zero) {
+						continue;
+					}
+					if (cur_gen->pkt_end < seg.seq || cur_gen->pkt_end - seg.seq > MPDU_MAX_SEQ/2) {
+						for (i=cur_gen->mcu_nr; i<MCU_PER_PP; i += MCU_PER_MPDU) {
+							pixelgen_append(cur_gen, NULL);
+						}
+						cur_gen->mcu_nr = 0;
+						cur_gen->pkt_end = (cur_gen->pkt_end + 3*MPDU_PER_LINE+1) % MPDU_MAX_SEQ;
+					} else {
+						align_okay = 1;
+					}
+				}
+				check_zero = 0;
+			}
+		}
+
+		/* Append the received MCU */
+		for (ch=0; ch<3; ch++) {
+			if (seg.apid == apid_list[ch]) {
+				cur_gen = pxgen[ch];
+				for (i = cur_gen->mcu_nr; i < mcu_nr; i += MCU_PER_MPDU) {
+					pixelgen_append(cur_gen, NULL);
+				}
+				pixelgen_append(cur_gen, &seg);
+			}
+		}
+		last_seq = seg.seq;
 	}
 
-	log("Press any key to exit\n");
-	tui_wait_for_user_input();
-	tui_deinit();
+	printf("\nPacket count: %d/%d\n", valid_count, total_count);
 
 	bmp_close(bmp);
-	decoder_deinit(decoder);
-	softsamples->close(softsamples);
+	pkt_deinit(pp);
+	for (ch=0; ch<3; ch++) {
+		pixelgen_deinit(pxgen[ch]);
+	}
+	viterbi->close(viterbi);
+	correlator->close(correlator);
+	src->close(src);
 
 	if (free_fname_on_exit) {
 		free(out_fname);
