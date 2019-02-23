@@ -18,6 +18,7 @@ main(int argc, char *argv[])
 {
 	int i, c, ch;
 	int total_count, valid_count, mcu_nr, seq_delta, last_seq;
+	uint32_t last_tstamp;
 	int align_okay, check_zero;
 	SoftSource *src, *correlator;
 	HardSource *viterbi;
@@ -89,6 +90,7 @@ main(int argc, char *argv[])
 	pxgen[2] = pixelgen_init(bmp, BLUE);
 
 	last_seq = -1;
+	last_tstamp = (uint32_t)-1;
 	total_count = 0;
 	valid_count = 0;
 	while (pkt_read(pp, &seg)) {
@@ -104,24 +106,19 @@ main(int argc, char *argv[])
 		       seg.apid,
 		       timeofday(seg.timestamp));
 
-		/* Skip packets that are not images from the AVHRR */
-		if (seg.apid < 64 || seg.apid >= 70) {
-			continue;
-		}
-
 		mcu = (Mcu*)seg.data;
 		mcu_nr = mcu_seq(mcu);
 		seq_delta = (seg.seq - last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
 
 		/* Compensate for lost MCUs */
-		if (last_seq > 0 && seq_delta > 1) {
+		if (last_seq >= 0 && seq_delta > 1) {
 			align_okay = 0;
 			check_zero = 0;
 
 			/* check_zero is a flag used to prevent channels that don't need to
 			 * be aligned from going out of sync */
 			for (ch=0; ch<3; ch++) {
-				if (pxgen[ch]->mcu_nr != 0) {
+				if (pxgen[ch]->mcu_nr > 0) {
 					check_zero = 1;
 				}
 			}
@@ -134,7 +131,8 @@ main(int argc, char *argv[])
 					if (cur_gen->mcu_nr == 0 && check_zero) {
 						continue;
 					}
-					if (cur_gen->pkt_end < seg.seq || cur_gen->pkt_end - seg.seq > MPDU_MAX_SEQ/2) {
+					if (cur_gen->pkt_end < seg.seq && cur_gen->pkt_end - seg.seq < MPDU_MAX_SEQ/2) {
+						printf("\nAligning %d %d", seg.seq, cur_gen->pkt_end);
 						for (i=cur_gen->mcu_nr; i<MCU_PER_PP; i += MCU_PER_MPDU) {
 							pixelgen_append(cur_gen, NULL);
 						}
@@ -148,6 +146,11 @@ main(int argc, char *argv[])
 			}
 		}
 
+		/* Fix any channel desync issues */
+		if (seg.timestamp > last_tstamp) {
+			bmp_flush(bmp);
+		}
+
 		/* Append the received MCU */
 		for (ch=0; ch<3; ch++) {
 			if (seg.apid == apid_list[ch]) {
@@ -158,6 +161,7 @@ main(int argc, char *argv[])
 				pixelgen_append(cur_gen, &seg);
 			}
 		}
+		last_tstamp = seg.timestamp;
 		last_seq = seg.seq;
 	}
 

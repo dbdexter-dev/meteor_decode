@@ -157,12 +157,12 @@ bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c)
 	return ret;
 }
 
-/* Skip count lines by drawing them black */
 void
-bmp_skip_lines(BmpSink *bmp, int count)
+bmp_flush(BmpSink *bmp)
 {
-	for (; count>0; count--) {
+	if (bmp->col_r || bmp->col_g || bmp->col_b) {
 		write_strip(bmp);
+		update_header(bmp);
 	}
 }
 

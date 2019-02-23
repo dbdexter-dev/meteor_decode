@@ -143,7 +143,8 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			mincost = best->cost;
 			for (i=0; i<N_STATES; i++) {
 				self->mem[i]->cost -= mincost;
-				memmove(self->mem[i]->data, self->mem[i]->data + count, BACKTRACK_DEPTH);
+				memmove(self->mem[i]->data, self->mem[i]->data + count/8, BACKTRACK_DEPTH/8);
+				memset(self->mem[i]->data + BACKTRACK_DEPTH/8, '\0', (self->cur_depth-BACKTRACK_DEPTH)/8);
 			}
 			self->cur_depth = BACKTRACK_DEPTH;
 		}
@@ -245,12 +246,12 @@ update_costs(const Viterbi *self, int8_t x, int8_t y)
 
 		/* Update the output string and cost */
 		if (cost_1 < cost_2) {
-			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth);
-			end_state->data[self->cur_depth] = input;
+			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth/8+1);
+			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
 			end_state->cost = cost_1;
 		} else if (cost_2 < MAX_COST) {
-			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth);
-			end_state->data[self->cur_depth] = input;
+			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth/8+1);
+			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
 			end_state->cost = cost_2;
 		} else {
 			end_state->cost = MAX_COST;
@@ -299,26 +300,10 @@ parity(uint8_t x)
 static int
 write_bits(uint8_t *out, const uint8_t *bits, size_t count)
 {
-	size_t i;
-	int bytes_out;
-	uint8_t accum;
-
 	assert(!(count & 0x7));
+	count /= 8;
 
-	bytes_out = 0;
-
-	accum = bits[0] << 7;
-	for(i=1; i<count; i++) {
-		if (!(i%8)) {
-			*out++ = accum;
-			accum = 0x00;
-			bytes_out++;
-		}
-		accum |= bits[i] << (7 - (i&0x07));
-	}
-	*out = accum;
-	bytes_out++;
-
-	return bytes_out;
+	memcpy(out, bits, count);
+	return count;
 }
 /*}}}*/

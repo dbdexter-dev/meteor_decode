@@ -30,6 +30,6 @@ BmpSink *bmp_open(const char *fname);
 void     bmp_close(BmpSink *bmp);
 
 int  bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c);
-void bmp_skip_lines(BmpSink *bmp, int count);
+void bmp_flush(BmpSink *bmp);
 
 #endif

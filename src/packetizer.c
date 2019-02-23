@@ -209,7 +209,6 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs)
 		return -2;
 	}
 
-
 	/* Descramble and error-correct the vcdu */
 	descramble(&dst->cvcdu);
 	rs_count = rs_fix_packet(rs, &dst->cvcdu);

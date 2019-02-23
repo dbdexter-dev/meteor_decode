@@ -46,7 +46,6 @@ pixelgen_deinit(PixelGen *self)
 	free(self);
 }
 
-
 /* Append a 14 x 8x8 strip to one of the channels of a BmpSink */
 void
 pixelgen_append(PixelGen *self, const Segment *seg)
@@ -87,9 +86,9 @@ pixelgen_append(PixelGen *self, const Segment *seg)
 		/* Update the next expected MCU number and segment sequence number */
 		self->mcu_nr = (self->mcu_nr / 8) % MCU_PER_PP;
 		if (self->mcu_nr) {
-			self->pkt_end = seg->seq + (MCU_PER_PP - mcu_seq(mcu))/MCU_PER_MPDU - 1;
+			self->pkt_end = (seg->seq + (MCU_PER_PP - self->mcu_nr)/MCU_PER_MPDU) % MPDU_MAX_SEQ;
 		} else {
-			self->pkt_end = seg->seq + 3*MPDU_PER_LINE+1;
+			self->pkt_end = (seg->seq + 3*MPDU_PER_LINE+1) % MPDU_MAX_SEQ;
 		}
 	}
 
