@@ -30,7 +30,7 @@ static void update_header(BmpSink *bmp);
 static void write_strip(BmpSink *bmp);
 
 BmpSink*
-bmp_open(const char *fname)
+bmp_open(const char *fname, unsigned imgwidth)
 {
 	Bmpheader hdr;
 	DIBheader dib;
@@ -44,7 +44,7 @@ bmp_open(const char *fname)
 	hdr.pixoffset = sizeof(Bmpheader) + sizeof(DIBheader);
 
 	dib.dibsize = sizeof(DIBheader);
-	dib.width = PX_PER_ROW;
+	dib.width = imgwidth;
 	dib.height = 0;
 	dib.num_colorplanes = 1;
 	dib.bits_per_px = BMP_BPP;
@@ -58,13 +58,18 @@ bmp_open(const char *fname)
 	if ((fd = fopen(fname, "w"))) {
 		fwrite(&hdr, sizeof(hdr), 1, fd);
 		fwrite(&dib, sizeof(dib), 1, fd);
+
 		ret = safealloc(sizeof(*ret));
+
 		ret->col_r = 0;
 		ret->col_g = 0;
 		ret->col_b = 0;
 		ret->num_rows = 0;
 		ret->fd = fd;
-		memset(ret->strip, 0, sizeof(ret->strip));
+		ret->width = imgwidth;
+		ret->strip = calloc(8*3, imgwidth);
+
+		memset(ret->strip, 0, sizeof(*ret->strip) * 8 * imgwidth);
 	} else {
 		fatal("Could not open output file");
 	}
@@ -80,6 +85,7 @@ bmp_close(BmpSink *bmp)
 	update_header(bmp);
 
 	fclose(bmp->fd);
+	free(bmp->strip);
 	free(bmp);
 }
 
@@ -89,46 +95,33 @@ int
 bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c)
 {
 	int i, j;
-
 	int ret;
 
 	ret = 0;
 
 	switch(c) {
 	case RED:
-		if (bmp->col_r >= PX_PER_ROW) {
-			write_strip(bmp);
-			update_header(bmp);
-		}
 		for (i=0; i<8; i++) {
 			for (j=0; j<8; j++) {
-				bmp->strip[i][bmp->col_r+j][2] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_r+j)*3+2] = block[i][j];
 			}
 		}
 		bmp->col_r += 8;
 		ret = bmp->col_r;
 		break;
 	case GREEN:
-		if (bmp->col_g >= PX_PER_ROW) {
-			write_strip(bmp);
-			update_header(bmp);
-		}
 		for (i=0; i<8; i++) {
 			for (j=0; j<8; j++) {
-				bmp->strip[i][bmp->col_g+j][1] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_g+j)*3+1] = block[i][j];
 			}
 		}
 		bmp->col_g += 8;
 		ret = bmp->col_g;
 		break;
 	case BLUE:
-		if (bmp->col_b >= PX_PER_ROW) {
-			write_strip(bmp);
-			update_header(bmp);
-		}
 		for (i=0; i<8; i++) {
 			for (j=0; j<8; j++) {
-				bmp->strip[i][bmp->col_b+j][0] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_b+j)*3+0] = block[i][j];
 			}
 		}
 		bmp->col_b += 8;
@@ -136,15 +129,11 @@ bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c)
 		break;
 	case ALL:       /* Fallthrough */
 	default:
-		if (bmp->col_r >= PX_PER_ROW || bmp->col_g >= PX_PER_ROW || bmp->col_b >= PX_PER_ROW) {
-			write_strip(bmp);
-			update_header(bmp);
-		}
 		for (i=0; i<8; i++) {
 			for (j=0; j<8; j++) {
-				bmp->strip[i][bmp->col_r+j][0] = block[i][j];
-				bmp->strip[i][bmp->col_g+j][1] = block[i][j];
-				bmp->strip[i][bmp->col_b+j][2] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_r+j)*3+2] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_g+j)*3+1] = block[i][j];
+				bmp->strip[(i*bmp->width+bmp->col_b+j)*3+0] = block[i][j];
 			}
 		}
 		bmp->col_r += 8;
@@ -158,7 +147,7 @@ bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c)
 }
 
 void
-bmp_flush(BmpSink *bmp)
+bmp_newstrip(BmpSink *bmp)
 {
 	if (bmp->col_r || bmp->col_g || bmp->col_b) {
 		write_strip(bmp);
@@ -175,23 +164,23 @@ update_header(BmpSink *bmp)
 	DIBheader dib;
 	long cur_pos;
 
-	hdr.magicnum[0] = 0x42;
-	hdr.magicnum[1] = 0x4d;
-	hdr.reserved = 0;
-	hdr.size = sizeof(Bmpheader) + sizeof(DIBheader) + bmp->num_rows * PX_PER_ROW;
-	hdr.pixoffset = sizeof(Bmpheader) + sizeof(DIBheader);
-
 	dib.dibsize = sizeof(DIBheader);
-	dib.width = PX_PER_ROW;
+	dib.width = bmp->width;
 	dib.height = bmp->num_rows;
 	dib.num_colorplanes = 1;
 	dib.bits_per_px = BMP_BPP;
 	dib.compression = 0;
-	dib.imgsize = bmp->num_rows * PX_PER_ROW;
+	dib.imgsize = bmp->num_rows * dib.width;
 	dib.horiz_res = 0;
 	dib.vert_res = 0;
 	dib.num_colors = 0;
 	dib.num_important_colors = 0;
+
+	hdr.magicnum[0] = 0x42;
+	hdr.magicnum[1] = 0x4d;
+	hdr.reserved = 0;
+	hdr.size = sizeof(Bmpheader) + sizeof(DIBheader) + dib.imgsize;
+	hdr.pixoffset = sizeof(Bmpheader) + sizeof(DIBheader);
 
 	cur_pos = ftell(bmp->fd);
 
@@ -206,11 +195,11 @@ update_header(BmpSink *bmp)
 static void
 write_strip(BmpSink *bmp)
 {
-	fwrite(bmp->strip, sizeof(bmp->strip), 1, bmp->fd);
+	fwrite(bmp->strip, 8 * 3 * bmp->width, 1, bmp->fd);
 	bmp->num_rows += 8;
 	bmp->col_r = 0;
 	bmp->col_g = 0;
 	bmp->col_b = 0;
-	memset(bmp->strip, 0, sizeof(bmp->strip));
+	memset(bmp->strip, 0, 8 * 3 * bmp->width);
 }
 /*}}}*/

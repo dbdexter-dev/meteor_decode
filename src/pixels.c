@@ -32,7 +32,7 @@ pixelgen_init(BmpSink *s, BmpChannel chan)
 	ret->channel = chan;
 
 	ret->mcu_nr = 0;
-	ret->pkt_end = 0;
+	ret->pkt_end = -1;
 
 	huffman_init();
 	jpeg_init();
@@ -63,16 +63,17 @@ pixelgen_append(PixelGen *self, const Segment *seg)
 
 	if (!seg) {
 		for (i=0; i<MCU_PER_MPDU; i++) {
-			self->mcu_nr = bmp_append(self->bmp, _black_thumbnail, self->channel);
+			bmp_append(self->bmp, _black_thumbnail, self->channel);
 		}
-		self->mcu_nr = (self->mcu_nr / 8) % MCU_PER_PP;
+		self->mcu_nr = (self->mcu_nr + MCU_PER_MPDU) % MCU_PER_PP;
 	} else {
 		mcu = (Mcu*)seg->data;
 		quality = mcu_quality_factor(mcu);
 		raw_data = mcu_data_ptr(mcu);
 
-		/* Exit if Huffman decoding fails */
+		/* Append black if Huffman decoding fails */
 		if (huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU, seg->len)<0) {
+			pixelgen_append(self, NULL);
 			return;
 		}
 
@@ -80,11 +81,11 @@ pixelgen_append(PixelGen *self, const Segment *seg)
 		for (i=0; i<MCU_PER_MPDU; i++) {
 			unzigzag(decoded_strip[i]);
 			jpeg_decode(thumbnail, decoded_strip[i], quality);
-			self->mcu_nr = bmp_append(self->bmp, thumbnail, self->channel);
+			bmp_append(self->bmp, thumbnail, self->channel);
 		}
 
-		/* Update the next expected MCU number and segment sequence number */
-		self->mcu_nr = (self->mcu_nr / 8) % MCU_PER_PP;
+		/* Update the next expected MCU number and segment end */
+		self->mcu_nr = (self->mcu_nr + MCU_PER_MPDU) % MCU_PER_PP;
 		if (self->mcu_nr) {
 			self->pkt_end = (seg->seq + (MCU_PER_PP - self->mcu_nr)/MCU_PER_MPDU) % MPDU_MAX_SEQ;
 		} else {

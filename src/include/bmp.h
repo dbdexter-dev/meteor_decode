@@ -21,15 +21,17 @@ typedef enum {
 
 typedef struct {
 	FILE *fd;
-	uint8_t strip[8][PX_PER_ROW][3];
+/*	uint8_t strip[8][PX_PER_ROW][3];*/
+	uint8_t *strip;
 	int col_r, col_g, col_b;
 	int num_rows;
+	unsigned width;
 } BmpSink;
 
-BmpSink *bmp_open(const char *fname);
+BmpSink *bmp_open(const char *fname, unsigned imgwidth);
 void     bmp_close(BmpSink *bmp);
 
 int  bmp_append(BmpSink *bmp, uint8_t block[8][8], BmpChannel c);
-void bmp_flush(BmpSink *bmp);
+void bmp_newstrip(BmpSink *bmp);
 
 #endif
