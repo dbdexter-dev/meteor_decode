@@ -21,6 +21,8 @@
 #define MPDU_MAX_SEQ 16384
 
 #define MPDU_PER_LINE 14
+#define MPDU_PER_PERIOD (3*MPDU_PER_LINE + 1)	/* 3 img channels + 1 metadata */
+
 #define MCU_HDR_SIZE 6
 #define MCU_PER_MPDU 14
 #define MCU_PER_PP (MCU_PER_MPDU * MPDU_PER_LINE)

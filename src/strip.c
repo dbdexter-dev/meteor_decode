@@ -81,7 +81,7 @@ channel_decode(Channel *self, const Segment *seg)
 
 /* Fill an image up until the whole line we are working on is black */
 void
-channel_nextline(Channel *self)
+channel_newline(Channel *self)
 {
 	do {
 		channel_decode(self, NULL);

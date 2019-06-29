@@ -16,14 +16,14 @@
 int
 main(int argc, char *argv[])
 {
-	int i, c, chnum;
-	int total_count, valid_count, mcu_nr, seq_delta, last_seq;
+	int i, j, line, c, chnum;
+	unsigned int last_tstamp;
+	int total_count, valid_count, mcu_nr, lines_delta, seq_delta, last_seq;
 	int helper_seq;
 	SoftSource *src, *correlator;
 	HardSource *viterbi;
 	Packetizer *pp;
 	Channel *ch[3], *cur_ch;
-	BmpSink *bmp;
 	Segment seg;
 	Mcu *mcu;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
@@ -82,13 +82,13 @@ main(int argc, char *argv[])
 	correlator = correlator_init_soft(src, encoded_syncword);
 	viterbi = viterbi_init(correlator);
 	pp = pkt_init(viterbi);
-	bmp = bmp_open(out_fname, PX_PER_ROW);
 
 	ch[0] = channel_init(apid_list[0]);
 	ch[1] = channel_init(apid_list[1]);
 	ch[2] = channel_init(apid_list[2]);
 
 	last_seq = -1;
+	last_tstamp = -1;
 	total_count = 0;
 	valid_count = 0;
 
@@ -141,11 +141,36 @@ main(int argc, char *argv[])
 				}
 
 				/* Fill the middle rows if necessary */
-				while (cur_ch->last_seq + 3*MPDU_PER_LINE+1 < helper_seq - 1) {
-					channel_nextline(cur_ch);
-					cur_ch->last_seq += 3*MPDU_PER_LINE+1;
+				while (cur_ch->last_seq + MPDU_PER_PERIOD < helper_seq - 1) {
+					channel_newline(cur_ch);
+					cur_ch->last_seq += MPDU_PER_PERIOD;
 				}
 				cur_ch->last_seq %= MPDU_MAX_SEQ;
+			}
+		}
+
+		/* Keep the uninitialized channels aligned */
+		if (last_tstamp < seg.timestamp) {
+			for (i=0; i<3; i++) {
+				cur_ch = ch[i];
+
+				/* Channel is uninitialized: check whether there is another
+				 * channel that is initialized */
+				if (cur_ch->last_seq < 0) {
+					for (j=0; j<3; j++) {
+						if (ch[j]->last_seq > 0) {
+							/* Compute the number of lines to fill */
+							lines_delta = (seg.seq - ch[j]->last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
+							lines_delta /= MPDU_PER_PERIOD;
+
+							for (; lines_delta >= 0; lines_delta--) {
+								channel_newline(cur_ch);
+							}
+
+							break;
+						}
+					}
+				}
 			}
 		}
 
@@ -163,6 +188,7 @@ main(int argc, char *argv[])
 			}
 		}
 
+		last_tstamp = seg.timestamp;
 		last_seq = seg.seq;
 	}
 
@@ -187,10 +213,8 @@ main(int argc, char *argv[])
 	bmp_close(green);
 	bmp_close(blue);
 
-
 	printf("\nPacket count: %d/%d\n", valid_count, total_count);
 
-	bmp_close(bmp);
 	pkt_deinit(pp);
 	for (i=0; i<3; i++) {
 		channel_deinit(ch[i]);

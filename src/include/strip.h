@@ -19,7 +19,7 @@ typedef struct {
 Channel* channel_init(int apid);
 void     channel_deinit(Channel *self);
 void     channel_decode(Channel *self, const Segment *seg);
-void     channel_nextline(Channel *self);
+void     channel_newline(Channel *self);
 size_t   channel_size(Channel *self);
 
 #endif
