@@ -1,5 +1,5 @@
-#ifndef LRPTDEC_STRIP_H
-#define LRPTDEC_STRIP_H
+#ifndef LRPTDEC_CHANNEL_H
+#define LRPTDEC_CHANNEL_H
 
 #include <stdint.h>
 #include <stdlib.h>

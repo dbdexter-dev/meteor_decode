@@ -1,9 +1,9 @@
 #include <string.h>
+#include "channel.h"
 #include "huffman.h"
 #include "jpeg.h"
 #include "packet.h"
 #include "packetizer.h"
-#include "strip.h"
 #include "utils.h"
 
 Channel*

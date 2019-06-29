@@ -3,20 +3,20 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include "bmp.h"
+#include "channel.h"
 #include "correlator.h"
 #include "file.h"
 #include "options.h"
 #include "packetizer.h"
+#include "png_out.h"
 #include "reedsolomon.h"
-#include "strip.h"
 #include "utils.h"
 #include "viterbi.h"
 
 int
 main(int argc, char *argv[])
 {
-	int i, j, line, c, chnum;
+	int i, j, c, chnum;
 	unsigned int last_tstamp;
 	int total_count, valid_count, mcu_nr, lines_delta, seq_delta, last_seq;
 	int helper_seq;
@@ -27,6 +27,7 @@ main(int argc, char *argv[])
 	Segment seg;
 	Mcu *mcu;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+	FILE *out_fd;
 
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
@@ -191,38 +192,24 @@ main(int argc, char *argv[])
 		last_tstamp = seg.timestamp;
 		last_seq = seg.seq;
 	}
-
-	BmpSink *red = bmp_open("/tmp/red.bmp", 1568);
-	BmpSink *green = bmp_open("/tmp/green.bmp", 1568);
-	BmpSink *blue = bmp_open("/tmp/blue.bmp", 1568);
-
-	for (i=0; i<ch[0]->len; i += 64) {
-		if (bmp_append(red, ch[0]->data + i, ALL) >= 1568)
-			bmp_newstrip(red);
-	}
-	for (i=0; i<ch[1]->len; i += 64) {
-		if (bmp_append(green, ch[1]->data + i, ALL) >= 1568)
-			bmp_newstrip(green);
-	}
-	for (i=0; i<ch[2]->len; i += 64) {
-		if (bmp_append(blue, ch[2]->data + i, ALL) >= 1568)
-			bmp_newstrip(blue);
-	}
-
-	bmp_close(red);
-	bmp_close(green);
-	bmp_close(blue);
-
 	printf("\nPacket count: %d/%d\n", valid_count, total_count);
 
 	pkt_deinit(pp);
-	for (i=0; i<3; i++) {
-		channel_deinit(ch[i]);
-	}
 	viterbi->close(viterbi);
 	correlator->close(correlator);
 	src->close(src);
 
+	/* Write the output PNG */
+	if (!(out_fd = fopen(out_fname, "w"))) {
+		fatal("Could not create/open output file");
+	}
+
+	png_compose(out_fd, ch[0], ch[1], ch[2]);
+	fclose(out_fd);
+
+	for (i=0; i<3; i++) {
+		channel_deinit(ch[i]);
+	}
 	if (free_fname_on_exit) {
 		free(out_fname);
 	}
