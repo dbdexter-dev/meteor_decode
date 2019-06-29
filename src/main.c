@@ -8,22 +8,21 @@
 #include "file.h"
 #include "options.h"
 #include "packetizer.h"
-#include "pixels.h"
 #include "reedsolomon.h"
+#include "strip.h"
 #include "utils.h"
 #include "viterbi.h"
 
 int
 main(int argc, char *argv[])
 {
-	int i, c, ch;
+	int i, c, chnum;
 	int total_count, valid_count, mcu_nr, seq_delta, last_seq;
-	uint32_t last_tstamp;
-	int align_okay, skip_zero;
+	int helper_seq;
 	SoftSource *src, *correlator;
 	HardSource *viterbi;
 	Packetizer *pp;
-	PixelGen *pxgen[3], *cur_gen;
+	Channel *ch[3], *cur_ch;
 	BmpSink *bmp;
 	Segment seg;
 	Mcu *mcu;
@@ -85,12 +84,11 @@ main(int argc, char *argv[])
 	pp = pkt_init(viterbi);
 	bmp = bmp_open(out_fname, PX_PER_ROW);
 
-	pxgen[0] = pixelgen_init(bmp, RED);
-	pxgen[1] = pixelgen_init(bmp, GREEN);
-	pxgen[2] = pixelgen_init(bmp, BLUE);
+	ch[0] = channel_init(apid_list[0]);
+	ch[1] = channel_init(apid_list[1]);
+	ch[2] = channel_init(apid_list[2]);
 
 	last_seq = -1;
-	last_tstamp = 0;
 	total_count = 0;
 	valid_count = 0;
 
@@ -101,6 +99,7 @@ main(int argc, char *argv[])
 		if (seg.len <= 0) {
 			continue;
 		}
+
 		valid_count++;
 
 		printf("\nseq %5d, APID %d %s",
@@ -108,8 +107,9 @@ main(int argc, char *argv[])
 		       seg.apid,
 		       timeofday(seg.timestamp));
 
+		/* Meteor-M2 has some overflow issues, and can send bad frames, which
+		 * screw with the sequence numbering (they all have seq=0).Skip them. */
 		if (seg.apid == 0) {
-			/* Meteor-M2 has some overflow issues, and can send bad frames */
 			continue;
 		}
 
@@ -119,74 +119,81 @@ main(int argc, char *argv[])
 
 		/* Compensate for lost MCUs */
 		if (last_seq >= 0 && seq_delta > 1) {
-			align_okay = 0;
-			skip_zero = 1;
+			printf("\nSeq delta: %d", seq_delta);
 
-			while (!align_okay) {
-				/* Realign all channels, filling with black MCUs until one of
-				 * them is aligned to the current sequence number */
-				for (ch=0; ch<3; ch++) {
-					cur_gen = pxgen[ch];
+			for (chnum=0; chnum<3; chnum++) {
+				cur_ch = ch[chnum];
 
-					/* If the channel is new, don't try to align it */
-					if (cur_gen->pkt_end < 0) {
-						continue;
-					}
-
-					/* If the current channel is already aligned, skip it */
-					if (skip_zero && cur_gen->mcu_nr == 0) {
-						continue;
-					}
-
-					/* If we lost the current strip's end, pad with black */
-					if (cur_gen->pkt_end < seg.seq && cur_gen->pkt_end - seg.seq < MPDU_MAX_SEQ/2) {
-						printf("\nAligning %d %d", seg.seq, cur_gen->pkt_end);
-
-						for (i=cur_gen->mcu_nr; i<MCU_PER_PP; i += MCU_PER_MPDU) {
-							pixelgen_append(cur_gen, NULL);
-						}
-
-						cur_gen->mcu_nr = 0;
-						cur_gen->pkt_end = (cur_gen->pkt_end + 3*MPDU_PER_LINE+1) % MPDU_MAX_SEQ;
-					} else {
-						/* Current channel is aligned: exit the while loop */
-						align_okay = 1;
-					}
+				if (cur_ch->last_seq < 0) {
+					continue;
 				}
 
-				skip_zero = 0;
-				if (!align_okay) {
-					bmp_newstrip(bmp);
+				helper_seq = (cur_ch->last_seq > seg.seq) ? seg.seq + MPDU_MAX_SEQ : seg.seq;
+				printf("\nAligning %d -> %d (ch %d)", cur_ch->last_seq, helper_seq, chnum);
+
+				/* Fill the end of the last line */
+				while (cur_ch->mcu_offset > 0) {
+					if (cur_ch->last_seq == helper_seq - 1) {
+						break;
+					}
+					channel_decode(cur_ch, NULL);
+					cur_ch->last_seq++;
 				}
+
+				/* Fill the middle rows if necessary */
+				while (cur_ch->last_seq + 3*MPDU_PER_LINE+1 < helper_seq - 1) {
+					channel_nextline(cur_ch);
+					cur_ch->last_seq += 3*MPDU_PER_LINE+1;
+				}
+				cur_ch->last_seq %= MPDU_MAX_SEQ;
 			}
-		}
-
-		/* Go to the next strip if the timestamp has changed */
-		if (seg.timestamp > last_tstamp)  {
-			bmp_newstrip(bmp);
 		}
 
 		/* Append the received MCU */
-		for (ch=0; ch<3; ch++) {
-			if (seg.apid == apid_list[ch]) {
-				cur_gen = pxgen[ch];
-				for (i = cur_gen->mcu_nr; i < mcu_nr; i += MCU_PER_MPDU) {
-					pixelgen_append(cur_gen, NULL);
+		for (i=0; i<3; i++) {
+			if (seg.apid == apid_list[i]) {
+				cur_ch = ch[i];
+
+				/* Align the beginning of the row */
+				while (cur_ch->mcu_offset < mcu_nr) {
+					printf("\nMCU delta: %d -> %d", cur_ch->mcu_offset, mcu_nr);
+					channel_decode(cur_ch, NULL);
 				}
-				pixelgen_append(cur_gen, &seg);
+				channel_decode(cur_ch, &seg);
 			}
 		}
 
-		last_tstamp = seg.timestamp;
 		last_seq = seg.seq;
 	}
+
+	BmpSink *red = bmp_open("/tmp/red.bmp", 1568);
+	BmpSink *green = bmp_open("/tmp/green.bmp", 1568);
+	BmpSink *blue = bmp_open("/tmp/blue.bmp", 1568);
+
+	for (i=0; i<ch[0]->len; i += 64) {
+		if (bmp_append(red, ch[0]->data + i, ALL) >= 1568)
+			bmp_newstrip(red);
+	}
+	for (i=0; i<ch[1]->len; i += 64) {
+		if (bmp_append(green, ch[1]->data + i, ALL) >= 1568)
+			bmp_newstrip(green);
+	}
+	for (i=0; i<ch[2]->len; i += 64) {
+		if (bmp_append(blue, ch[2]->data + i, ALL) >= 1568)
+			bmp_newstrip(blue);
+	}
+
+	bmp_close(red);
+	bmp_close(green);
+	bmp_close(blue);
+
 
 	printf("\nPacket count: %d/%d\n", valid_count, total_count);
 
 	bmp_close(bmp);
 	pkt_deinit(pp);
-	for (ch=0; ch<3; ch++) {
-		pixelgen_deinit(pxgen[ch]);
+	for (i=0; i<3; i++) {
+		channel_deinit(ch[i]);
 	}
 	viterbi->close(viterbi);
 	correlator->close(correlator);

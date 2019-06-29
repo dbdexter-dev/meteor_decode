@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "huffman.h"
 #include "utils.h"
 
 static int  get_quant(int quality, int x, int y);
 static void dct_inverse(int16_t dst[8][8], int16_t src[8][8]);
 static void dequantize(int16_t dst[8][8], int16_t src[8][8], int quality);
+static void unzigzag(int16_t block[8][8]);
 
 /* Quantization table, standard 50% quality JPEG */
 static const int _quant[8][8] =
@@ -20,6 +22,20 @@ static const int _quant[8][8] =
 	{49, 64, 78, 87, 103,121,120,101},
 	{72, 92, 95, 98, 112,100,103,99}
 };
+
+/* 8x8 reverse zigzag pattern */
+static const int _zigzag_lut[64] =
+{
+	0,  1,  8,  16, 9,  2,  3,  10,
+	17, 24, 32, 25, 18, 11, 4,  5,
+	12, 19, 26, 33, 40, 48, 41, 34,
+	27, 20, 13, 6,  7,  14, 21, 28,
+	35, 42, 49, 56, 57, 50, 43, 36,
+	29, 22, 15, 23, 30, 37, 44, 51,
+	58, 59, 52, 45, 38, 31, 39, 46,
+	53, 60, 61, 54, 47, 55, 62, 63
+};
+
 
 static float _cos_lut[8][8];
 static float _alpha_lut[8];
@@ -50,6 +66,7 @@ jpeg_decode(uint8_t dst[8][8], int16_t src[8][8], int quality)
 	int i, j;
 	int16_t tmp[8][8];
 
+	unzigzag(src);
 	dequantize(tmp, src, quality);
 	dct_inverse(src, tmp);
 
@@ -78,7 +95,7 @@ dequantize(int16_t dst[8][8], int16_t src[8][8], int quality)
 	}
 }
 
-/* In-place inverse discrete cosine transform on an 8x8 src */
+/* Inverse discrete cosine transform on an 8x8 src */
 static void
 dct_inverse(int16_t dst[8][8], int16_t src[8][8])
 {
@@ -112,5 +129,25 @@ get_quant(int quality, int x, int y)
 	}
 
 	return MAX(1, round(_quant[x][y] * compr_ratio/100.0));
+}
+
+/* Descramble a jpeg 8x8 block */
+static void
+unzigzag(int16_t block[8][8])
+{
+	int i, j;
+	int16_t tmp[64];
+
+	for (i=0; i<8; i++) {
+		for (j=0; j<8; j++) {
+			tmp[_zigzag_lut[i*8+j]] = block[i][j];
+		}
+	}
+
+	for (i=0; i<8; i++) {
+		for (j=0; j<8; j++) {
+			block[i][j] = tmp[i*8+j];
+		}
+	}
 }
 /*}}}*/
