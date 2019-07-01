@@ -13,21 +13,28 @@
 #include "utils.h"
 #include "viterbi.h"
 
+static void align_channels(Channel *ch[3], int seq);
+static void align_uninit(Channel *ch[3], int seq);
+
 int
 main(int argc, char *argv[])
 {
-	int i, j, c, chnum;
-	unsigned int last_tstamp;
-	int total_count, valid_count, mcu_nr, lines_delta, seq_delta, last_seq;
-	int helper_seq;
+	int i, c;
+	int write_statfile;
+	unsigned int first_tstamp, last_tstamp;
+	int total_count, valid_count;
+	int mcu_nr, seq_delta, last_seq;
+	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+	char *stat_fname;
+	FILE *out_fd, *stat_fd;
+
 	SoftSource *src, *correlator;
 	HardSource *viterbi;
 	Packetizer *pp;
 	Channel *ch[3], *cur_ch;
 	Segment seg;
 	Mcu *mcu;
-	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
-	FILE *out_fd;
+
 
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
@@ -37,6 +44,7 @@ main(int argc, char *argv[])
 	/* Initialize command-line overridable parameters {{{*/
 	out_fname = NULL;
 	free_fname_on_exit = 0;
+	write_statfile = 0;
 	apid_list[0] = 68;
 	apid_list[1] = 65;
 	apid_list[2] = 64;
@@ -45,6 +53,7 @@ main(int argc, char *argv[])
 	if (argc < 2) {
 		usage(argv[0]);
 	}
+
 	optind = 0;
 	while ((c = getopt_long(argc, argv, SHORTOPTS, longopts, NULL)) != -1) {
 		switch(c) {
@@ -56,6 +65,9 @@ main(int argc, char *argv[])
 			break;
 		case 'o':
 			out_fname = optarg;
+			break;
+		case 't':
+			write_statfile = 1;
 			break;
 		case 'v':
 			version();
@@ -88,11 +100,27 @@ main(int argc, char *argv[])
 	ch[1] = channel_init(apid_list[1]);
 	ch[2] = channel_init(apid_list[2]);
 
+	/* Open/create the output PNG */
+	if (!(out_fd = fopen(out_fname, "w"))) {
+		fatal("Could not create/open output file");
+	}
+
+	if (write_statfile) {
+		stat_fname = safealloc(strlen(out_fname) + 5);
+		sprintf(stat_fname, "%s.stat", out_fname);
+		if (!(stat_fd = fopen(stat_fname, "w"))) {
+			fatal("Could not create/open stat file");
+		}
+	}
+
+
 	last_seq = -1;
+	first_tstamp = -1;
 	last_tstamp = -1;
 	total_count = 0;
 	valid_count = 0;
 
+	/* Read all the packets */
 	while (pkt_read(pp, &seg)) {
 		total_count++;
 
@@ -114,65 +142,22 @@ main(int argc, char *argv[])
 			continue;
 		}
 
+		if (last_seq < 0) {
+			first_tstamp = seg.timestamp;
+		}
+
 		mcu = (Mcu*)seg.data;
 		mcu_nr = mcu_seq(mcu);
 		seq_delta = (seg.seq - last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
 
 		/* Compensate for lost MCUs */
 		if (last_seq >= 0 && seq_delta > 1) {
-			printf("\nSeq delta: %d", seq_delta);
-
-			for (chnum=0; chnum<3; chnum++) {
-				cur_ch = ch[chnum];
-
-				if (cur_ch->last_seq < 0) {
-					continue;
-				}
-
-				helper_seq = (cur_ch->last_seq > seg.seq) ? seg.seq + MPDU_MAX_SEQ : seg.seq;
-				printf("\nAligning %d -> %d (ch %d)", cur_ch->last_seq, helper_seq, chnum);
-
-				/* Fill the end of the last line */
-				while (cur_ch->mcu_offset > 0) {
-					if (cur_ch->last_seq == helper_seq - 1) {
-						break;
-					}
-					channel_decode(cur_ch, NULL);
-					cur_ch->last_seq++;
-				}
-
-				/* Fill the middle rows if necessary */
-				while (cur_ch->last_seq + MPDU_PER_PERIOD < helper_seq - 1) {
-					channel_newline(cur_ch);
-					cur_ch->last_seq += MPDU_PER_PERIOD;
-				}
-				cur_ch->last_seq %= MPDU_MAX_SEQ;
-			}
+			align_channels(ch, seg.seq);
 		}
 
 		/* Keep the uninitialized channels aligned */
 		if (last_tstamp < seg.timestamp) {
-			for (i=0; i<3; i++) {
-				cur_ch = ch[i];
-
-				/* Channel is uninitialized: check whether there is another
-				 * channel that is initialized */
-				if (cur_ch->last_seq < 0) {
-					for (j=0; j<3; j++) {
-						if (ch[j]->last_seq > 0) {
-							/* Compute the number of lines to fill */
-							lines_delta = (seg.seq - ch[j]->last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
-							lines_delta /= MPDU_PER_PERIOD;
-
-							for (; lines_delta >= 0; lines_delta--) {
-								channel_newline(cur_ch);
-							}
-
-							break;
-						}
-					}
-				}
-			}
+			align_uninit(ch, seg.seq);
 		}
 
 		/* Append the received MCU */
@@ -182,7 +167,6 @@ main(int argc, char *argv[])
 
 				/* Align the beginning of the row */
 				while (cur_ch->mcu_offset < mcu_nr) {
-					printf("\nMCU delta: %d -> %d", cur_ch->mcu_offset, mcu_nr);
 					channel_decode(cur_ch, NULL);
 				}
 				channel_decode(cur_ch, &seg);
@@ -199,13 +183,18 @@ main(int argc, char *argv[])
 	correlator->close(correlator);
 	src->close(src);
 
-	/* Write the output PNG */
-	if (!(out_fd = fopen(out_fname, "w"))) {
-		fatal("Could not create/open output file");
-	}
+	if (valid_count > 0) {
+		png_compose(out_fd, ch[0], ch[1], ch[2]);
+		fclose(out_fd);
 
-	png_compose(out_fd, ch[0], ch[1], ch[2]);
-	fclose(out_fd);
+		if (stat_fd) {
+			fprintf(stat_fd, "%s\r\n", timeofday(first_tstamp));
+			fprintf(stat_fd, "%s\r\n", timeofday(last_tstamp - first_tstamp));
+			fprintf(stat_fd, "0,1538925\r\n");
+
+			fclose(stat_fd);
+		}
+	}
 
 	for (i=0; i<3; i++) {
 		channel_deinit(ch[i]);
@@ -215,3 +204,71 @@ main(int argc, char *argv[])
 	}
 	return 0;
 }
+
+/* Static functions {{{ */
+/* Align channels to a specific segment number */
+void
+align_channels(Channel *ch[3], int seq)
+{
+	Channel *cur_ch;
+	int chnum;
+	int helper_seq;
+
+	for (chnum=0; chnum<3; chnum++) {
+		cur_ch = ch[chnum];
+
+		if (cur_ch->last_seq < 0) {
+			continue;
+		}
+
+		/* Compute the target sequence number to reach */
+		helper_seq = (cur_ch->last_seq > seq) ? seq + MPDU_MAX_SEQ : seq;
+
+		/* Fill the end of the last line */
+		while (cur_ch->mcu_offset > 0) {
+			if (cur_ch->last_seq == helper_seq - 1) {
+				break;
+			}
+			channel_decode(cur_ch, NULL);
+			cur_ch->last_seq++;
+		}
+
+		/* Fill the middle rows if necessary */
+		while (cur_ch->last_seq + MPDU_PER_PERIOD < helper_seq) {
+			channel_newline(cur_ch);
+			cur_ch->last_seq += MPDU_PER_PERIOD;
+		}
+		cur_ch->last_seq %= MPDU_MAX_SEQ;
+	}
+}
+
+/* Maintain the beginning of each channel aligned */
+void
+align_uninit(Channel *ch[3], int seq)
+{
+	int i, j, lines_delta;
+	Channel *cur_ch;
+
+	for (i=0; i<3; i++) {
+		cur_ch = ch[i];
+
+		/* Channel is uninitialized: check whether there is another
+		 * channel that is initialized */
+		if (cur_ch->last_seq < 0) {
+			for (j=0; j<3; j++) {
+				if (ch[j]->last_seq > 0) {
+					/* Compute the number of lines to fill */
+					lines_delta = (seq - ch[j]->last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
+					lines_delta /= MPDU_PER_PERIOD;
+
+					for (; lines_delta >= 0; lines_delta--) {
+						channel_newline(cur_ch);
+					}
+
+					break;
+				}
+			}
+		}
+	}
+}
+/*}}}*/

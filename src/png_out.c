@@ -59,7 +59,7 @@ png_compose(FILE *fd, Channel *red, Channel *green, Channel *blue)
 
 			/* Channel buffer structure is not linear, find the offset
 			 * corresponding to the required row/column coordinate */
-			pixel_idx = (64*block_num + block_offset) + ((row % 8)*8 + WIDTH * row);
+			pixel_idx = (64*block_num + block_offset) + (((row % 8) + WIDTH * (row/8)) * 8);
 
 			/* Some channels may be shorter than others. In that case, just
 			 * write black pixels to that channel */

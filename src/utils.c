@@ -104,6 +104,7 @@ usage(const char *pname)
 	fprintf(stderr,
 			"   -a, --apid R,G,B        Specify APIDs to parse (default: 68,65,64)\n"
 			"   -o, --output <file>     Output composite png to <file>\n"
+			"   -t, --statfile          Write the .stat file containing timing data\n"
 			"\n"
 			"   -h, --help              Print this help screen\n"
 			"   -v, --version           Print version info\n"
