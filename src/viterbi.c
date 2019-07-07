@@ -53,7 +53,7 @@ viterbi_init(SoftSource *src)
 	if (!_initialized) {
 		for (i=-128; i<128; i++) {
 			_cost_lut[(uint8_t)i][0] = i + 128;
-			_cost_lut[(uint8_t)i][1] = abs(i-127);
+			_cost_lut[(uint8_t)i][1] = 128 - i;
 		}
 		_initialized = 1;
 	}

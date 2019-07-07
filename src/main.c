@@ -26,7 +26,7 @@ main(int argc, char *argv[])
 	int mcu_nr, seq_delta, last_seq;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
 	char *stat_fname;
-	FILE *out_fd, *stat_fd;
+	FILE *out_fd = NULL, *stat_fd = NULL;
 
 	SoftSource *src, *correlator;
 	HardSource *viterbi;
@@ -106,7 +106,7 @@ main(int argc, char *argv[])
 	}
 
 	if (write_statfile) {
-		stat_fname = safealloc(strlen(out_fname) + 5);
+		stat_fname = safealloc(strlen(out_fname) + 5 + 1);
 		sprintf(stat_fname, "%s.stat", out_fname);
 		if (!(stat_fd = fopen(stat_fname, "w"))) {
 			fatal("Could not create/open stat file");
@@ -185,15 +185,21 @@ main(int argc, char *argv[])
 
 	if (valid_count > 0) {
 		png_compose(out_fd, ch[0], ch[1], ch[2]);
-		fclose(out_fd);
 
 		if (stat_fd) {
 			fprintf(stat_fd, "%s\r\n", timeofday(first_tstamp));
 			fprintf(stat_fd, "%s\r\n", timeofday(last_tstamp - first_tstamp));
 			fprintf(stat_fd, "0,1538925\r\n");
 
-			fclose(stat_fd);
 		}
+	}
+
+	if (out_fd) {
+		fclose(out_fd);
+	}
+
+	if (stat_fd) {
+		fclose(stat_fd);
 	}
 
 	for (i=0; i<3; i++) {

@@ -181,7 +181,7 @@ correlator_soft_correlate(Correlator *self, const int8_t *frame, size_t len)
 	/* Prioritize the correlation in the first position */
 	for (pattern=0; pattern<self->pattern_count; pattern++) {
 		tmp_corr = qw_correlate(hard_frame, self->patterns[pattern]);
-		if (tmp_corr >= CORRELATION_THR - 5) {
+		if (tmp_corr >= CORRELATION_THR - 10) {
 			self->active_correction = pattern;
 			free(correlation);
 			free(corr_pos);

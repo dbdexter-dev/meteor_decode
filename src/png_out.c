@@ -18,6 +18,10 @@ png_compose(FILE *fd, Channel *red, Channel *green, Channel *blue)
 	png_infop info_ptr;
 	png_bytep row_ptr;
 
+	if (!fd) {
+		fatal("Output fd is null");
+	}
+
 	/* Compute the image height: if it is zero, just return */
 	height = MAX(red->len, MAX(green->len, blue->len)) / WIDTH;
 	if (height == 0) {
@@ -63,9 +67,9 @@ png_compose(FILE *fd, Channel *red, Channel *green, Channel *blue)
 
 			/* Some channels may be shorter than others. In that case, just
 			 * write black pixels to that channel */
-			red_px  = (pixel_idx > red->len ? 0 : red->data[pixel_idx]);
-			green_px  = (pixel_idx > green->len ? 0 : green->data[pixel_idx]);
-			blue_px  = (pixel_idx > blue->len ? 0 : blue->data[pixel_idx]);
+			red_px  = (pixel_idx >= red->len ? 0 : red->data[pixel_idx]);
+			green_px  = (pixel_idx >= green->len ? 0 : green->data[pixel_idx]);
+			blue_px  = (pixel_idx >= blue->len ? 0 : blue->data[pixel_idx]);
 
 			row_ptr[col*3+0] = red_px;
 			row_ptr[col*3+1] = green_px;
