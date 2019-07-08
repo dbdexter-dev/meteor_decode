@@ -77,10 +77,9 @@ rs_fix_packet(ReedSolomon *self, Vcdu *pkt)
 		corr_count = fix_block(self, self->block, RS_N);
 
 		if (corr_count < 0) {
-			ret = -1;
-		} else if (ret >= 0) {
-			ret += corr_count;
+			return -1;
 		}
+		ret += corr_count;
 
 		/* Re-interleave the (hopefully) corrected packet */
 		interleave((uint8_t*)pkt, self->block, self->interleaving, i, RS_N);
@@ -122,7 +121,6 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 	prev_delta = 1;
 	m = 1;
 	for (n=0; n<RS_2T; n++) {
-		/* Discrepancy = sum_i=1^lambda_deg{syndrome[n-i] * lambda[i]} */
 		for (i=0, delta=0; i<=lambda_deg; i++) {
 			delta ^= gf_mul(syndrome[n-i], lambda[i]);
 		}
@@ -175,7 +173,7 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 		/* lambda_root = 1/Xi, Xi being the i-th error locator */
 		fcr = gf_pow(lambda_root[i], FIRST_CONSEC_ROOT-1);
 		num = gf_poly_eval(omega, lambda_root[i], RS_2T);
-		den = gf_poly_eval(lambda_prime,lambda_root[i], RS_T);
+		den = gf_poly_eval(lambda_prime, lambda_root[i], RS_T);
 
 		if (error_pos[i] < len) {
 			block[error_pos[i]] ^= gf_div(gf_mul(num, fcr), den);

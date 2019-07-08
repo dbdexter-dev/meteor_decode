@@ -21,7 +21,7 @@ typedef struct {
 
 static void compute_trans(Viterbi *v);
 static int  parity(uint8_t x);
-static void update_costs(const Viterbi *self, int8_t x, int8_t y);
+static inline void update_costs(const Viterbi *self, int8_t x, int8_t y);
 static void viterbi_deinit(HardSource *v);
 static int  viterbi_decode(HardSource *v, uint8_t *out, size_t count);
 static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
@@ -53,7 +53,7 @@ viterbi_init(SoftSource *src)
 	if (!_initialized) {
 		for (i=-128; i<128; i++) {
 			_cost_lut[(uint8_t)i][0] = i + 128;
-			_cost_lut[(uint8_t)i][1] = abs(i-127);
+			_cost_lut[(uint8_t)i][1] = 128 - i;
 		}
 		_initialized = 1;
 	}
@@ -118,18 +118,18 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			self->cur_depth++;
 		}
 
+		if (points_in < fwd_depth) {
+			/* We reached the end of the source: just flush the Viterbi memory
+			 * instead of doing the whole algorithm */
+			return viterbi_flush(src, out, len);
+		}
+
 		/* Find the best path so far */
 		best = self->mem[0];
 		for (i=1; i<N_STATES; i++) {
 			if (self->mem[i]->cost < best->cost) {
 				best = self->mem[i];
 			}
-		}
-
-		if (points_in < fwd_depth) {
-			/* We reached the end of the source: just flush the Viterbi memory
-			 * instead of doing the whole algorithm */
-			return viterbi_flush(src, out, len);
 		}
 
 		/* Write out depth - BACKTRACK_DEPTH bits */
@@ -143,7 +143,8 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			mincost = best->cost;
 			for (i=0; i<N_STATES; i++) {
 				self->mem[i]->cost -= mincost;
-				memmove(self->mem[i]->data, self->mem[i]->data + count, BACKTRACK_DEPTH);
+				memmove(self->mem[i]->data, self->mem[i]->data + count/8, BACKTRACK_DEPTH/8);
+				memset(self->mem[i]->data + BACKTRACK_DEPTH/8, '\0', (self->cur_depth-BACKTRACK_DEPTH)/8);
 			}
 			self->cur_depth = BACKTRACK_DEPTH;
 		}
@@ -210,17 +211,24 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 }
 
 /* Static functions {{{*/
-/* For any given end state, find the previous state that gets to it with the
- * least effort */
-static void
+/* Recompute the cost function for every state given the input symbol (x, y) */
+static inline void
 update_costs(const Viterbi *self, int8_t x, int8_t y)
 {
 	Node *end_state;
 	int id;
 	int candidate_1, candidate_2;
 	int cost_1, cost_2;
+	int local_cost[4];
 	uint8_t input;
 
+
+	/* Prefetch any possible cost we might need while updating the individual
+	 * state costs*/
+	local_cost[0] = cost(x, y, 0);
+	local_cost[1] = cost(x, y, 1);
+	local_cost[2] = cost(x, y, 2);
+	local_cost[3] = cost(x, y, 3);
 
 	for (id=0; id<N_STATES; id++) {
 		end_state = self->tmp[id];
@@ -232,17 +240,18 @@ update_costs(const Viterbi *self, int8_t x, int8_t y)
 		candidate_1 = ((id << 1) & (N_STATES - 1));
 		candidate_2 = candidate_1+1;
 		cost_1 = self->mem[candidate_1]->cost +
-		         cost(x, y, self->outputs[candidate_1][input]);
+		         local_cost[self->outputs[candidate_1][input]];
 		cost_2 = self->mem[candidate_2]->cost +
-		         cost(x, y, self->outputs[candidate_2][input]);
+		         local_cost[self->outputs[candidate_2][input]];
 
+		/* Update the output string and cost */
 		if (cost_1 < cost_2) {
-			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth);
-			end_state->data[self->cur_depth] = input;
+			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth/8+1);
+			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
 			end_state->cost = cost_1;
 		} else if (cost_2 < MAX_COST) {
-			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth);
-			end_state->data[self->cur_depth] = input;
+			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth/8+1);
+			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
 			end_state->cost = cost_2;
 		} else {
 			end_state->cost = MAX_COST;
@@ -291,26 +300,10 @@ parity(uint8_t x)
 static int
 write_bits(uint8_t *out, const uint8_t *bits, size_t count)
 {
-	size_t i;
-	int bytes_out;
-	uint8_t accum;
-
 	assert(!(count & 0x7));
+	count /= 8;
 
-	bytes_out = 0;
-
-	accum = bits[0] << 7;
-	for(i=1; i<count; i++) {
-		if (!(i%8)) {
-			*out++ = accum;
-			accum = 0x00;
-			bytes_out++;
-		}
-		accum |= bits[i] << (7 - (i&0x07));
-	}
-	*out = accum;
-	bytes_out++;
-
-	return bytes_out;
+	memcpy(out, bits, count);
+	return count;
 }
 /*}}}*/

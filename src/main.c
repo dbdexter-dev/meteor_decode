@@ -3,42 +3,57 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include "bmp.h"
-#include "decoder.h"
+#include "channel.h"
+#include "correlator.h"
 #include "file.h"
 #include "options.h"
-#include "tui.h"
+#include "packetizer.h"
+#include "png_out.h"
+#include "reedsolomon.h"
 #include "utils.h"
+#include "viterbi.h"
+
+static void align_channels(Channel *ch[3], int seq);
+static void align_uninit(Channel *ch[3], int seq);
 
 int
 main(int argc, char *argv[])
 {
-	int c;
-	SoftSource *softsamples;
-	BmpSink *bmp;
-	Decoder *decoder;
-	struct timespec timespec;
+	int i, c;
+	int write_statfile;
+	unsigned int first_tstamp, last_tstamp;
+	int total_count, valid_count;
+	int mcu_nr, seq_delta, last_seq;
+	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
+	char *stat_fname;
+	FILE *out_fd = NULL, *stat_fd = NULL;
+
+	SoftSource *src, *correlator;
+	HardSource *viterbi;
+	Packetizer *pp;
+	Channel *ch[3], *cur_ch;
+	Segment seg;
+	Mcu *mcu;
+
 
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
-	int upd_interval;
-	int (*log)(const char *msg, ...);
 	/*}}}*/
 	/* Initialize command-line overridable parameters {{{*/
-	log = tui_print_info;
 	out_fname = NULL;
 	free_fname_on_exit = 0;
+	write_statfile = 0;
 	apid_list[0] = 68;
 	apid_list[1] = 65;
 	apid_list[2] = 64;
-	upd_interval = 150;
 	/*}}}*/
 	/* Parse command line args {{{ */
 	if (argc < 2) {
 		usage(argv[0]);
 	}
+
 	optind = 0;
 	while ((c = getopt_long(argc, argv, SHORTOPTS, longopts, NULL)) != -1) {
 		switch(c) {
@@ -50,6 +65,9 @@ main(int argc, char *argv[])
 			break;
 		case 'o':
 			out_fname = optarg;
+			break;
+		case 't':
+			write_statfile = 1;
 			break;
 		case 'v':
 			version();
@@ -70,53 +88,193 @@ main(int argc, char *argv[])
 	}
 	/*}}}*/
 
-	/* Initialize the UI */
 	splash();
-	tui_init(upd_interval);
 
-	/* Open the two endpoints of the chain - the soft samples input and the BMP
-	 * image output */
-	softsamples = src_soft_open(in_fname, 8);
-	bmp = bmp_open(out_fname);
+	src = src_soft_open(in_fname, 8);
+	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
+	correlator = correlator_init_soft(src, encoded_syncword);
+	viterbi = viterbi_init(correlator);
+	pp = pkt_init(viterbi);
 
-	decoder = decoder_init(bmp, softsamples, apid_list);
-	decoder_start(decoder);
+	ch[0] = channel_init(apid_list[0]);
+	ch[1] = channel_init(apid_list[1]);
+	ch[2] = channel_init(apid_list[2]);
 
-	timespec.tv_sec = upd_interval/1000;
-	timespec.tv_nsec = ((upd_interval - timespec.tv_sec*1000))*1000L*1000;
-
-	log("Decoder initialized\n");
-
-	while (decoder_get_status(decoder)) {
-		if (tui_process_input()) {
-			break;
-		}
-		tui_update_phys(decoder_get_syncword(decoder),
-		                decoder_get_rs_count(decoder),
-		                decoder_get_total_count(decoder),
-		                decoder_get_valid_count(decoder));
-		tui_update_pktinfo(decoder_get_seq(decoder),
-		                   decoder_get_apid(decoder),
-		                   decoder_get_time(decoder));
-/*		printf("0x%08X\t rs=%2d, APID %d, onboard time: %s\r",*/
-/*		       decoder_get_syncword(decoder),*/
-/*		       decoder_get_rs_count(decoder),*/
-/*		       decoder_get_apid(decoder),*/
-/*		       timeofday(decoder_get_time(decoder))*/
-/*		       );*/
-/*		fflush(stdout);*/
+	/* Open/create the output PNG */
+	if (!(out_fd = fopen(out_fname, "w"))) {
+		fatal("Could not create/open output file");
 	}
 
-	log("Press any key to exit\n");
-	tui_wait_for_user_input();
-	tui_deinit();
+	if (write_statfile) {
+		stat_fname = safealloc(strlen(out_fname) + 5 + 1);
+		sprintf(stat_fname, "%s.stat", out_fname);
+		if (!(stat_fd = fopen(stat_fname, "w"))) {
+			fatal("Could not create/open stat file");
+		}
+	}
 
-	bmp_close(bmp);
-	softsamples->close(softsamples);
-	decoder_deinit(decoder);
 
+	last_seq = -1;
+	first_tstamp = -1;
+	last_tstamp = -1;
+	total_count = 0;
+	valid_count = 0;
+
+	/* Read all the packets */
+	while (pkt_read(pp, &seg)) {
+		total_count++;
+
+		/* Skip invalid packets */
+		if (seg.len <= 0) {
+			continue;
+		}
+
+		valid_count++;
+
+		printf("\nseq %5d, APID %d %s",
+		       seg.seq,
+		       seg.apid,
+		       timeofday(seg.timestamp));
+
+		/* Meteor-M2 has some overflow issues, and can send bad frames, which
+		 * screw with the sequence numbering (they all have seq=0).Skip them. */
+		if (seg.apid == 0) {
+			continue;
+		}
+
+		if (last_seq < 0) {
+			first_tstamp = seg.timestamp;
+		}
+
+		mcu = (Mcu*)seg.data;
+		mcu_nr = mcu_seq(mcu);
+		seq_delta = (seg.seq - last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
+
+		/* Compensate for lost MCUs */
+		if (last_seq >= 0 && seq_delta > 1) {
+			align_channels(ch, seg.seq);
+		}
+
+		/* Keep the uninitialized channels aligned */
+		if (last_tstamp < seg.timestamp) {
+			align_uninit(ch, seg.seq);
+		}
+
+		/* Append the received MCU */
+		for (i=0; i<3; i++) {
+			if (seg.apid == apid_list[i]) {
+				cur_ch = ch[i];
+
+				/* Align the beginning of the row */
+				while (cur_ch->mcu_offset < mcu_nr) {
+					channel_decode(cur_ch, NULL);
+				}
+				channel_decode(cur_ch, &seg);
+			}
+		}
+
+		last_tstamp = seg.timestamp;
+		last_seq = seg.seq;
+	}
+	printf("\nPacket count: %d/%d\n", valid_count, total_count);
+
+	pkt_deinit(pp);
+	viterbi->close(viterbi);
+	correlator->close(correlator);
+	src->close(src);
+
+	if (valid_count > 0) {
+		png_compose(out_fd, ch[0], ch[1], ch[2]);
+
+		if (stat_fd) {
+			fprintf(stat_fd, "%s\r\n", timeofday(first_tstamp));
+			fprintf(stat_fd, "%s\r\n", timeofday(last_tstamp - first_tstamp));
+			fprintf(stat_fd, "0,1538925\r\n");
+
+		}
+	}
+
+	if (out_fd) {
+		fclose(out_fd);
+	}
+
+	if (stat_fd) {
+		fclose(stat_fd);
+	}
+
+	for (i=0; i<3; i++) {
+		channel_deinit(ch[i]);
+	}
 	if (free_fname_on_exit) {
 		free(out_fname);
 	}
 	return 0;
 }
+
+/* Static functions {{{ */
+/* Align channels to a specific segment number */
+void
+align_channels(Channel *ch[3], int seq)
+{
+	Channel *cur_ch;
+	int chnum;
+	int helper_seq;
+
+	for (chnum=0; chnum<3; chnum++) {
+		cur_ch = ch[chnum];
+
+		if (cur_ch->last_seq < 0) {
+			continue;
+		}
+
+		/* Compute the target sequence number to reach */
+		helper_seq = (cur_ch->last_seq > seq) ? seq + MPDU_MAX_SEQ : seq;
+
+		/* Fill the end of the last line */
+		while (cur_ch->mcu_offset > 0) {
+			if (cur_ch->last_seq == helper_seq - 1) {
+				break;
+			}
+			channel_decode(cur_ch, NULL);
+			cur_ch->last_seq++;
+		}
+
+		/* Fill the middle rows if necessary */
+		while (cur_ch->last_seq + MPDU_PER_PERIOD < helper_seq) {
+			channel_newline(cur_ch);
+			cur_ch->last_seq += MPDU_PER_PERIOD;
+		}
+		cur_ch->last_seq %= MPDU_MAX_SEQ;
+	}
+}
+
+/* Maintain the beginning of each channel aligned */
+void
+align_uninit(Channel *ch[3], int seq)
+{
+	int i, j, lines_delta;
+	Channel *cur_ch;
+
+	for (i=0; i<3; i++) {
+		cur_ch = ch[i];
+
+		/* Channel is uninitialized: check whether there is another
+		 * channel that is initialized */
+		if (cur_ch->last_seq < 0) {
+			for (j=0; j<3; j++) {
+				if (ch[j]->last_seq > 0) {
+					/* Compute the number of lines to fill */
+					lines_delta = (seq - ch[j]->last_seq + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
+					lines_delta /= MPDU_PER_PERIOD;
+
+					for (; lines_delta >= 0; lines_delta--) {
+						channel_newline(cur_ch);
+					}
+
+					break;
+				}
+			}
+		}
+	}
+}
+/*}}}*/

@@ -42,11 +42,11 @@ gen_fname(int apid)
 			 "LRPT_%Y_%m_%d-%H_%M", tm);
 
 	if (apid < 0) {
-		ret = safealloc(sizeof("LRPT_YYYY_MM_DD-HH_MM.bmp"));
-		sprintf(ret, "%s.bmp", tmp);
+		ret = safealloc(sizeof("LRPT_YYYY_MM_DD-HH_MM.png"));
+		sprintf(ret, "%s.png", tmp);
 	} else {
-		ret = safealloc(sizeof("LRPT_YYYY_MM_DD-HH_MM-AA.bmp"));
-		sprintf(ret, "%s-%02d.bmp", tmp, apid);
+		ret = safealloc(sizeof("LRPT_YYYY_MM_DD-HH_MM-AA.png"));
+		sprintf(ret, "%s-%02d.png", tmp, apid);
 	}
 
 	free(tmp);
@@ -103,7 +103,8 @@ usage(const char *pname)
 	fprintf(stderr, "Usage: %s [options] file_in\n", pname);
 	fprintf(stderr,
 			"   -a, --apid R,G,B        Specify APIDs to parse (default: 68,65,64)\n"
-			"   -o, --output <file>     Output composite bmp to <file>\n"
+			"   -o, --output <file>     Output composite png to <file>\n"
+			"   -t, --statfile          Write the .stat file containing timing data\n"
 			"\n"
 			"   -h, --help              Print this help screen\n"
 			"   -v, --version           Print version info\n"
