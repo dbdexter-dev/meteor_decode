@@ -51,10 +51,14 @@ viterbi_init(SoftSource *src)
 	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
 
 	if (!_initialized) {
-		for (i=-128; i<128; i++) {
-			_cost_lut[(uint8_t)i][0] = i + 128;
-			_cost_lut[(uint8_t)i][1] = 128 - i;
+		_cost_lut[0][0] = 128;
+		_cost_lut[0][1] = 128;
+
+		for (i=1; i<128; i++) {
+			_cost_lut[i][0] = _cost_lut[256-i][1] = i + 128;
+			_cost_lut[i][1] = _cost_lut[256-i][0] = 128 - i;
 		}
+
 		_initialized = 1;
 	}
 

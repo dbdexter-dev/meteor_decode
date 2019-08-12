@@ -27,7 +27,7 @@ install: default
 	@echo Installing executable file to ${PREFIX}/bin
 	@mkdir -p ${PREFIX}/bin
 	@cp src/meteor_decode ${PREFIX}/bin
-	@chmod 755 ${PREFIX}/bin/lrptdec
+	@chmod 755 ${PREFIX}/bin/meteor_decode
 
 uninstall:
 	@echo Removing executable file from ${PREFIX}/bin

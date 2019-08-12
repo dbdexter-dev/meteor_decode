@@ -143,10 +143,7 @@ main(int argc, char *argv[])
 
 		valid_count++;
 
-		printf("\nseq %5d, APID %d %s",
-		       seg.seq,
-		       seg.apid,
-		       timeofday(seg.timestamp));
+		printf("\nseq %5d, APID %d %s", seg.seq, seg.apid, timeofday(seg.timestamp));
 
 		/* Meteor-M2 has some overflow issues, and can send bad frames, which
 		 * screw with the sequence numbering (they all have seq=0).Skip them. */
@@ -195,17 +192,23 @@ main(int argc, char *argv[])
 	correlator->close(correlator);
 	src->close(src);
 
+	/* Write the 3 decoded channels to a PNG if there's any data in them */
 	if (valid_count > 0) {
 		png_compose(out_fd, ch[0], ch[1], ch[2]);
 
+		/* Write the .stat file used by software like MeteorGIS */
 		if (stat_fd) {
 			fprintf(stat_fd, "%s\r\n", timeofday(first_tstamp));
 			fprintf(stat_fd, "%s\r\n", timeofday(last_tstamp - first_tstamp));
 			fprintf(stat_fd, "0,1538925\r\n");
-
 		}
 	}
 
+
+	/* Deinitialize/free all allocated resources */
+	for (i=0; i<3; i++) {
+		channel_deinit(ch[i]);
+	}
 	if (out_fd) {
 		fclose(out_fd);
 	}
@@ -213,13 +216,10 @@ main(int argc, char *argv[])
 	if (stat_fd) {
 		fclose(stat_fd);
 	}
-
-	for (i=0; i<3; i++) {
-		channel_deinit(ch[i]);
-	}
 	if (free_fname_on_exit) {
 		free(out_fname);
 	}
+
 	return 0;
 }
 
