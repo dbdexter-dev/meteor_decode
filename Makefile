@@ -1,4 +1,4 @@
-VERSION=\"0.1\"
+VERSION=\"0.2-beta1\"
 
 export CFLAGS += -pipe -march=native -Wall -std=c99 -pedantic -D_XOPEN_SOURCE=700 -DVERSION=${VERSION}
 export LDFLAGS +=
@@ -27,7 +27,7 @@ install: default
 	@echo Installing executable file to ${PREFIX}/bin
 	@mkdir -p ${PREFIX}/bin
 	@cp src/meteor_decode ${PREFIX}/bin
-	@chmod 755 ${PREFIX}/bin/lrptdec
+	@chmod 755 ${PREFIX}/bin/meteor_decode
 
 uninstall:
 	@echo Removing executable file from ${PREFIX}/bin

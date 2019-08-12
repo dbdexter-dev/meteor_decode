@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include "channel.h"
 #include "correlator.h"
+#include "diff.h"
 #include "file.h"
 #include "options.h"
 #include "packetizer.h"
@@ -28,7 +29,7 @@ main(int argc, char *argv[])
 	char *stat_fname;
 	FILE *out_fd = NULL, *stat_fd = NULL;
 
-	SoftSource *src, *correlator;
+	SoftSource *src, *diff, *correlator;
 	HardSource *viterbi;
 	Packetizer *pp;
 	Channel *ch[3], *cur_ch;
@@ -38,6 +39,7 @@ main(int argc, char *argv[])
 
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
+	int diffcoding;
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
 	/*}}}*/
@@ -45,6 +47,7 @@ main(int argc, char *argv[])
 	out_fname = NULL;
 	free_fname_on_exit = 0;
 	write_statfile = 0;
+	diffcoding = 0;
 	apid_list[0] = 68;
 	apid_list[1] = 65;
 	apid_list[2] = 64;
@@ -59,6 +62,9 @@ main(int argc, char *argv[])
 		switch(c) {
 		case 'a':
 			parse_apids(apid_list, optarg);
+			break;
+		case 'd':
+			diffcoding = 1;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -92,7 +98,14 @@ main(int argc, char *argv[])
 
 	src = src_soft_open(in_fname, 8);
 	viterbi_encode(encoded_syncword, SYNCWORD, sizeof(SYNCWORD));
-	correlator = correlator_init_soft(src, encoded_syncword);
+
+	if (diffcoding) {
+		diff = diff_src(src);
+		correlator = correlator_init_soft(diff, encoded_syncword);
+	} else {
+		correlator = correlator_init_soft(src, encoded_syncword);
+	}
+
 	viterbi = viterbi_init(correlator);
 	pp = pkt_init(viterbi);
 
@@ -113,7 +126,6 @@ main(int argc, char *argv[])
 		}
 	}
 
-
 	last_seq = -1;
 	first_tstamp = -1;
 	last_tstamp = -1;
@@ -131,10 +143,7 @@ main(int argc, char *argv[])
 
 		valid_count++;
 
-		printf("\nseq %5d, APID %d %s",
-		       seg.seq,
-		       seg.apid,
-		       timeofday(seg.timestamp));
+		printf("\nseq %5d, APID %d %s", seg.seq, seg.apid, timeofday(seg.timestamp));
 
 		/* Meteor-M2 has some overflow issues, and can send bad frames, which
 		 * screw with the sequence numbering (they all have seq=0).Skip them. */
@@ -183,17 +192,23 @@ main(int argc, char *argv[])
 	correlator->close(correlator);
 	src->close(src);
 
+	/* Write the 3 decoded channels to a PNG if there's any data in them */
 	if (valid_count > 0) {
 		png_compose(out_fd, ch[0], ch[1], ch[2]);
 
+		/* Write the .stat file used by software like MeteorGIS */
 		if (stat_fd) {
 			fprintf(stat_fd, "%s\r\n", timeofday(first_tstamp));
 			fprintf(stat_fd, "%s\r\n", timeofday(last_tstamp - first_tstamp));
 			fprintf(stat_fd, "0,1538925\r\n");
-
 		}
 	}
 
+
+	/* Deinitialize/free all allocated resources */
+	for (i=0; i<3; i++) {
+		channel_deinit(ch[i]);
+	}
 	if (out_fd) {
 		fclose(out_fd);
 	}
@@ -201,13 +216,10 @@ main(int argc, char *argv[])
 	if (stat_fd) {
 		fclose(stat_fd);
 	}
-
-	for (i=0; i<3; i++) {
-		channel_deinit(ch[i]);
-	}
 	if (free_fname_on_exit) {
 		free(out_fname);
 	}
+
 	return 0;
 }
 

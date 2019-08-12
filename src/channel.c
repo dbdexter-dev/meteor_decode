@@ -56,6 +56,7 @@ channel_decode(Channel *self, const Segment *seg)
 	}
 
 	if (!seg) {
+		/* Add a black line if the segment is all black*/
 		memset(self->ptr, '\0', MCU_PER_MPDU * 64);
 		self->ptr += MCU_PER_MPDU * 64;
 	} else {
@@ -63,11 +64,13 @@ channel_decode(Channel *self, const Segment *seg)
 		quality = mcu_quality_factor(mcu);
 		raw_data = mcu_data_ptr(mcu);
 
+		/* If Huffman decoding failed, just make the entire block black */
 		if (huffman_decode(decoded_strip, raw_data, MCU_PER_MPDU, seg->len) < 0) {
 			channel_decode(self, NULL);
 			return;
 		}
 
+		/* Decompress each thumbnail and append it to the main channel buffer */
 		for (i=0; i<MCU_PER_MPDU; i++) {
 			jpeg_decode(thumbnail, decoded_strip[i], quality);
 			memcpy(self->ptr, thumbnail, 64);

@@ -27,7 +27,6 @@ typedef struct {
 	void *next_header;
 	uint8_t cadu[sizeof(Cadu)];
 	ReedSolomon *rs;
-	int rs_fix_count;
 	HardSource *src;
 } Packetizer;
 
