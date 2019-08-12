@@ -23,5 +23,6 @@
 HardSource* viterbi_init(SoftSource *src);
 
 int viterbi_encode(uint8_t *out, const uint8_t *in, size_t len);
+int viterbi_diff_encode(uint8_t *out, const uint8_t *in, size_t len);
 
 #endif

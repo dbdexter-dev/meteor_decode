@@ -150,7 +150,7 @@ fix_block(ReedSolomon *self, uint8_t *block, size_t len)
 	}
 
 	/* Bruteforce the roots of lambda (zero cannot be a root by definition) */
-	for (i=1, error_count=0; i<=RS_N && error_count < lambda_deg; i++) {
+	for (i=1, error_count=0; i<RS_N && error_count < lambda_deg; i++) {
 		if (gf_poly_eval(lambda, i, RS_T+1) == 0) {
 			/* This is black magic */
 			error_pos[error_count] = RS_N - (_logtable[i] * (DUAL_BASIS_BASE-1)) % RS_N;

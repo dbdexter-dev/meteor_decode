@@ -66,6 +66,11 @@ huffman_decode(int16_t (*dst)[8][8], const uint8_t *src, int count, int maxlen)
 		dc_info = get_bits(src+byte_idx, bit_idx, 16);
 		dc_cat = get_dc_cat(dc_info);
 
+		/* If the DC coefficient is invalid, skip this block */
+		if (dc_cat < 0) {
+			continue;
+		}
+
 		/* If dc_cat is zero, dont update dc_coeff */
 		if (dc_cat) {
 			dc_signum = get_bits(src+byte_idx, bit_idx + _cat_prefix_size[dc_cat], 1);

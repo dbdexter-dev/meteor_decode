@@ -44,8 +44,7 @@ pkt_deinit(Packetizer *pp)
 	free(pp);
 }
 
-/* Retrieve the next segment.
- * "The ugliest function ever written. Period." */
+/* Retrieve the next segment */
 int
 pkt_read(Packetizer *self, Segment *seg)
 {
@@ -173,6 +172,7 @@ pkt_read(Packetizer *self, Segment *seg)
 			data_ptr -= bytes_out;
 			bytes_out = 0;
 		}
+
 		memcpy(seg->data + bytes_out, data_ptr, seg->len - bytes_out);
 		self->next_header = vcdu_mpdu_header_ptr(vcdu);
 	} else {
@@ -196,6 +196,7 @@ pkt_read(Packetizer *self, Segment *seg)
 
 	return seg->len;
 }
+
 
 /* Static functions {{{*/
 static int
