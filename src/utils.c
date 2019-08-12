@@ -103,7 +103,7 @@ usage(const char *pname)
 	fprintf(stderr, "Usage: %s [options] file_in\n", pname);
 	fprintf(stderr,
 			"   -a, --apid R,G,B        Specify APIDs to parse (default: 68,65,64)\n"
-			"   -d, --diff              Differential decode (used by Meteor-M N2-2)\n"
+			"   -d, --diff              Differentially decode (e.g. for Metebr-M N2-2)\n"
 			"   -o, --output <file>     Output composite png to <file>\n"
 			"   -t, --statfile          Write the .stat file containing timing data\n"
 			"\n"
