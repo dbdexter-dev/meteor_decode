@@ -53,9 +53,10 @@ pkt_read(Packetizer *self, Segment *seg)
 	uint8_t *data_ptr;
 	int bytes_out;
 	int timestamp_present;
-	int errcount;
+	int *errcount;
 
 	vcdu = &(((Cadu*)self->cadu)->cvcdu);
+	errcount = &self->rs_errcount;
 
 	bytes_out = 0;
 	if (self->next_header) {
@@ -63,12 +64,12 @@ pkt_read(Packetizer *self, Segment *seg)
 		mpdu = (Mpdu*)(self->next_header);
 	} else {
 		/* Fetch a new CADU */
-		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, &errcount) < 0) {
+		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, errcount) < 0) {
 			return 0;
 		}
 
 		/* Check RS error count */
-		if (errcount < 0) {
+		if (*errcount < 0) {
 			self->next_header = NULL;
 			seg->len = 0;
 			return -1;
@@ -100,11 +101,11 @@ pkt_read(Packetizer *self, Segment *seg)
 		memcpy(&frag_hdr, mpdu, bytes_out);
 
 		/* Fetch a new packet to get the second fragment */
-		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, &errcount) < 0) {
+		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, errcount) < 0) {
 			return 0;
 		}
 
-		if (errcount < 0) {
+		if (*errcount < 0) {
 			self->next_header = NULL;
 			seg->len = 0;
 			return -1;
@@ -160,12 +161,12 @@ pkt_read(Packetizer *self, Segment *seg)
 			memcpy(seg->data, data_ptr, bytes_out);
 		}
 
-		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, &errcount)) {
+		if (retrieve_and_fix((Cadu*)self->cadu, self->src, self->rs, errcount)) {
 			return 0;
 		}
 
 		/* Check RS return status */
-		if (errcount < 0) {
+		if (*errcount < 0) {
 			self->next_header = NULL;
 			seg->len = 0;
 			return -1;
@@ -192,6 +193,18 @@ pkt_read(Packetizer *self, Segment *seg)
 	return seg->len;
 }
 
+int
+pkt_get_rs(Packetizer *pp)
+{
+	return pp->rs_errcount;
+}
+
+uint32_t
+pkt_get_marker(Packetizer *pp)
+{
+	return ((Cadu*)pp->cadu)->sync_marker;
+}
+
 
 /* Static functions {{{*/
 /* Fetch the next CADU, and run it through the RS error corrector */
@@ -209,7 +222,6 @@ retrieve_and_fix(Cadu *dst, HardSource *src, ReedSolomon *rs, int *errcount)
 	/* Descramble and error-correct the vcdu */
 	descramble(&dst->cvcdu);
 	*errcount = rs_fix_packet(rs, &dst->cvcdu);
-	printf("\n0x%08X  rs=%d", dst->sync_marker, *errcount);
 
 	return 0;
 }

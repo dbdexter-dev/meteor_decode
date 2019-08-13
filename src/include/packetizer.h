@@ -24,6 +24,7 @@ typedef struct {
 } Segment;
 
 typedef struct {
+	int rs_errcount;
 	void *next_header;
 	uint8_t cadu[sizeof(Cadu)];
 	ReedSolomon *rs;
@@ -34,5 +35,8 @@ Packetizer* pkt_init(HardSource *src);
 void        pkt_deinit(Packetizer *pp);
 
 int pkt_read(Packetizer *pp, Segment *seg);
+
+int      pkt_get_rs(Packetizer *pp);
+uint32_t pkt_get_marker(Packetizer *pp);
 
 #endif

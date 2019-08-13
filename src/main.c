@@ -42,8 +42,10 @@ main(int argc, char *argv[])
 	int diffcoding;
 	char *out_fname, *in_fname;
 	int free_fname_on_exit;
+	int quiet;
 	/*}}}*/
 	/* Initialize command-line overridable parameters {{{*/
+	quiet = 0;
 	out_fname = NULL;
 	free_fname_on_exit = 0;
 	write_statfile = 0;
@@ -72,7 +74,10 @@ main(int argc, char *argv[])
 		case 'o':
 			out_fname = optarg;
 			break;
-		case 't':
+		case 'q':
+			quiet = 1;
+			break;
+		case 's':
 			write_statfile = 1;
 			break;
 		case 'v':
@@ -133,17 +138,27 @@ main(int argc, char *argv[])
 	valid_count = 0;
 
 	/* Read all the packets */
+	printf("Decoding started\n");
 	while (pkt_read(pp, &seg)) {
 		total_count++;
 
+		if (!quiet) {
+			printf("0x%08X rs=%2d ", pkt_get_marker(pp), pkt_get_rs(pp));
+		}
+
 		/* Skip invalid packets */
 		if (seg.len <= 0) {
+			printf("\r");
+			fflush(stdout);
 			continue;
 		}
 
 		valid_count++;
 
-		printf("\nseq %5d, APID %d %s", seg.seq, seg.apid, timeofday(seg.timestamp));
+		if (!quiet) {
+			printf("seq %5d, APID %d  %s\r", seg.seq, seg.apid, timeofday(seg.timestamp));
+			fflush(stdout);
+		}
 
 		/* Meteor-M2 has some overflow issues, and can send bad frames, which
 		 * screw with the sequence numbering (they all have seq=0).Skip them. */
@@ -185,7 +200,12 @@ main(int argc, char *argv[])
 		last_tstamp = seg.timestamp;
 		last_seq = seg.seq;
 	}
-	printf("\nPacket count: %d/%d\n", valid_count, total_count);
+	if (!quiet) {
+		printf("\n");
+	}
+	printf("Decoding complete\n");
+	printf("Successfully decoded packets: %d/%d (%4.1f%%)\n", valid_count, total_count,
+			100.0 * valid_count/total_count);
 
 	pkt_deinit(pp);
 	viterbi->close(viterbi);
