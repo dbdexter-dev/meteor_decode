@@ -1,3 +1,4 @@
+
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -8,24 +9,23 @@
 
 typedef struct state {
 	uint16_t cost;
-	uint8_t data[MEM_DEPTH+1];
+	uint8_t prev;
 } Node;
 
 typedef struct {
 	int cur_depth;
 	uint8_t outputs[N_STATES][2];
-	Node (*mem)[N_STATES];
-	Node (*tmp)[N_STATES];
+	Node mem[MEM_DEPTH][N_STATES];
 	SoftSource *src;
 } Viterbi;
 
 static void compute_trans(Viterbi *v);
 static int  parity(uint8_t x);
-static inline void update_costs(const Viterbi *self, int8_t x, int8_t y);
+static void update_costs(Viterbi *const self, int8_t x, int8_t y);
 static void viterbi_deinit(HardSource *v);
 static int  viterbi_decode(HardSource *v, uint8_t *out, size_t count);
 static int  viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen);
-static int  write_bits(uint8_t *out, const uint8_t *bits, size_t count);
+static int  traceback(Viterbi *self, uint8_t *data, uint8_t end_node, size_t skip);
 
 static inline unsigned int cost(int8_t x, int8_t y, uint8_t coding);
 
@@ -47,8 +47,10 @@ viterbi_init(SoftSource *src)
 	v->src = src;
 	v->cur_depth = 0;
 
-	v->mem = calloc(N_STATES, sizeof(*v->mem));
-	v->tmp = calloc(N_STATES, sizeof(*v->tmp));
+	for (i=0; i<N_STATES; i++) {
+		v->mem[0][i].cost = 0;
+		v->mem[0][i].prev = 0;
+	}
 
 	if (!_initialized) {
 		_cost_lut[0][0] = 128;
@@ -75,8 +77,6 @@ viterbi_deinit(HardSource *src)
 {
 	Viterbi *v = src->_backend;
 
-	free(v->mem);
-	free(v->tmp);
 	free(v);
 	free(src);
 }
@@ -86,11 +86,11 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 {
 	int fwd_depth;
 	int in_pos, points_in, bytes_out;
-	int i, count;
+	int i, best_idx;
 	int8_t in[2*MEM_DEPTH];
 	unsigned int mincost;
 	int8_t x, y;
-	Node *best, (*tmp)[N_STATES];
+	Node *best, *layer;
 	Viterbi *self = src->_backend;
 
 	/* Len must be a multiple of 8 */
@@ -114,11 +114,6 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 			/* Update the costs to be in each state given the input we have */
 			update_costs(self, x, y);
 
-			/* Update the Viterbi decoder memory (swap tmp and mem) */
-			tmp = self->mem;
-			self->mem = self->tmp;
-			self->tmp = tmp;
-
 			self->cur_depth++;
 		}
 
@@ -129,27 +124,31 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 		}
 
 		/* Find the best path so far */
-		best = self->mem[0];
+		layer = self->mem[self->cur_depth-1];
+		best = &layer[0];
+		best_idx = 0;
 		for (i=1; i<N_STATES; i++) {
-			if (self->mem[i]->cost < best->cost) {
-				best = self->mem[i];
+			if (layer[i].cost < best->cost) {
+				best = &layer[i];
+				best_idx = i;
 			}
 		}
 
 		/* Write out depth - BACKTRACK_DEPTH bits */
 		if (self->cur_depth > (int)BACKTRACK_DEPTH) {
-			count = self->cur_depth - BACKTRACK_DEPTH;
-			i = write_bits(out, best->data, count);
+			i = traceback(self, out, best_idx, BACKTRACK_DEPTH);
 			out += i;
 			bytes_out += i;
 
-			/* Realign data and normalize the costs */
+			/* Normalize the costs for the last layer */
 			mincost = best->cost;
+			layer = self->mem[self->cur_depth-1];
 			for (i=0; i<N_STATES; i++) {
-				self->mem[i]->cost -= mincost;
-				memmove(self->mem[i]->data, self->mem[i]->data + count/8, BACKTRACK_DEPTH/8);
-				memset(self->mem[i]->data + BACKTRACK_DEPTH/8, '\0', (self->cur_depth-BACKTRACK_DEPTH)/8);
+				layer[i].cost -= mincost;
 			}
+
+			/* Move the skipped states to the beginning of the trellis */
+			memmove(self->mem[0], self->mem[self->cur_depth-BACKTRACK_DEPTH], BACKTRACK_DEPTH * sizeof(self->mem[0]));
 			self->cur_depth = BACKTRACK_DEPTH;
 		}
 	}
@@ -162,7 +161,7 @@ viterbi_decode(HardSource *src, uint8_t *out, size_t len)
 int
 viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen)
 {
-	int i;
+	int i, best_idx;
 	Node *best;
 	Viterbi *self = v->_backend;
 
@@ -172,18 +171,21 @@ viterbi_flush(HardSource *v, uint8_t *out, size_t maxlen)
 
 	/* Find the best candidate */
 	best = self->mem[0];
+	best_idx = 0;
 	for (i=1; i<N_STATES; i++) {
 		if (self->mem[i]->cost < best->cost) {
 			best = self->mem[i];
+			best_idx = i;
 		}
 	}
 
 	/* Write out BACKTRACK_DEPTH bits */
-	i = write_bits(out, best->data, MIN(maxlen, (size_t)self->cur_depth));
+	i = traceback(self, out, best_idx, MIN(maxlen, (size_t)self->cur_depth));
 
 	self->cur_depth = 0;
 	return i;
 }
+
 
 /* Not really a part of the Viterbi algorithm, but still fits within this file.
  * Byte-wise convolutional encoder, same parameters as the decoder (G1,G2,N,K) */
@@ -216,8 +218,8 @@ viterbi_encode(uint8_t *out, const uint8_t *in, size_t len)
 
 /* Static functions {{{*/
 /* Recompute the cost function for every state given the input symbol (x, y) */
-static inline void
-update_costs(const Viterbi *self, int8_t x, int8_t y)
+static void
+update_costs(Viterbi *const self, int8_t x, int8_t y)
 {
 	Node *end_state;
 	int id;
@@ -225,7 +227,8 @@ update_costs(const Viterbi *self, int8_t x, int8_t y)
 	int cost_1, cost_2;
 	int local_cost[4];
 	uint8_t input;
-
+	Node *const cur_layer = self->mem[self->cur_depth];
+	Node *const prev_layer = self->mem[MAX(0, self->cur_depth-1)];
 
 	/* Prefetch any possible cost we might need while updating the individual
 	 * state costs*/
@@ -235,7 +238,7 @@ update_costs(const Viterbi *self, int8_t x, int8_t y)
 	local_cost[3] = cost(x, y, 3);
 
 	for (id=0; id<N_STATES; id++) {
-		end_state = self->tmp[id];
+		end_state = &cur_layer[id];
 
 		/* Compute the input necessary to get to end_state */
 		input = id >> (K-1);
@@ -243,25 +246,58 @@ update_costs(const Viterbi *self, int8_t x, int8_t y)
 		/* Compute the costs from the two possible ancestors */
 		candidate_1 = ((id << 1) & (N_STATES - 1));
 		candidate_2 = candidate_1+1;
-		cost_1 = self->mem[candidate_1]->cost +
+		cost_1 = prev_layer[candidate_1].cost +
 		         local_cost[self->outputs[candidate_1][input]];
-		cost_2 = self->mem[candidate_2]->cost +
+		cost_2 = prev_layer[candidate_2].cost +
 		         local_cost[self->outputs[candidate_2][input]];
 
 		/* Update the output string and cost */
 		if (cost_1 < cost_2) {
-			memcpy(end_state->data, self->mem[candidate_1]->data, self->cur_depth/8+1);
-			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
+			end_state->prev = candidate_1;
 			end_state->cost = cost_1;
 		} else if (cost_2 < MAX_COST) {
-			memcpy(end_state->data, self->mem[candidate_2]->data, self->cur_depth/8+1);
-			end_state->data[self->cur_depth/8] |= input << (7-self->cur_depth%8);
+			end_state->prev = candidate_2;
 			end_state->cost = cost_2;
 		} else {
 			end_state->cost = MAX_COST;
 		}
 	}
 }
+
+/* Traceback inside the Viterbi trellis to fill the output buffer */
+static int
+traceback(Viterbi *self, uint8_t *data, uint8_t node, size_t skip)
+{
+	Node *layer;
+	int i, ret, bit_idx;
+	int offset;
+	uint8_t byte;
+
+	assert((self->cur_depth - skip) % 8 == 0);
+
+	offset = (self->cur_depth - skip) / 8;
+	ret = offset;
+
+	/* Traceback without writing anything for the first $skip bytes */
+	for (i=self->cur_depth - 1; i > self->cur_depth - skip - 1; i--) {
+		node = self->mem[i][node].prev;
+	}
+
+	/* Traceback and write the output for the rest of the trellis */
+	for (; i>=0;) {
+		byte = 0;
+		for (bit_idx = 0; bit_idx < 8; bit_idx++) {
+			layer = self->mem[i];
+			byte |= (node >> (K-1) & 0x01) << bit_idx;
+			node = layer[node].prev;
+			i--;
+		}
+		data[--offset] = byte;
+	}
+
+	return ret;
+}
+
 
 /* Precompute the transition function */
 static void
@@ -298,16 +334,5 @@ parity(uint8_t x)
 	}
 
 	return ret & 0x01;
-}
-
-/* From a uint8_t array of single bits to a compact uint8_t array of bytes */
-static int
-write_bits(uint8_t *out, const uint8_t *bits, size_t count)
-{
-	assert(!(count & 0x7));
-	count /= 8;
-
-	memcpy(out, bits, count);
-	return count;
 }
 /*}}}*/

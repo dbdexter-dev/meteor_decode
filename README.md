@@ -14,9 +14,7 @@ binary into /usr/bin/.
 ## Usage info
 
 ```
-LRPT decoder v0.2-beta1
-
-Usage: ./src/meteor_decode [options] file_in
+Usage: meteor_decode [options] file_in
    -a, --apid R,G,B        Specify APIDs to parse (default: 68,65,64)
    -d, --diff              Differentially decode (e.g. for Meteor-M N2-2)
    -o, --output <file>     Output composite png to <file>

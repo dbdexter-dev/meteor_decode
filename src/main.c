@@ -143,12 +143,12 @@ main(int argc, char *argv[])
 		total_count++;
 
 		if (!quiet) {
+			printf("\033[2K\r");
 			printf("0x%08X rs=%2d ", pkt_get_marker(pp), pkt_get_rs(pp));
 		}
 
 		/* Skip invalid packets */
 		if (seg.len <= 0) {
-			printf("\r");
 			fflush(stdout);
 			continue;
 		}
@@ -156,7 +156,7 @@ main(int argc, char *argv[])
 		valid_count++;
 
 		if (!quiet) {
-			printf("seq %5d, APID %d  %s\r", seg.seq, seg.apid, timeofday(seg.timestamp));
+			printf("seq=%5d, APID %d  %s\r", seg.seq, seg.apid, timeofday(seg.timestamp));
 			fflush(stdout);
 		}
 
