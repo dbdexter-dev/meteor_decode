@@ -30,6 +30,7 @@ channel_deinit(Channel *self)
 {
 	free(self->data);
 	self->ptr = NULL;
+	free(self);
 }
 
 void

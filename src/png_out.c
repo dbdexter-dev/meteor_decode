@@ -44,9 +44,6 @@ png_compose(FILE *fd, Channel *red, Channel *green, Channel *blue)
 	}
 
 	png_init_io(png_ptr, fd);
-	if (setjmp(png_jmpbuf(png_ptr))) {
-		fatal("Error during the creation of the png");
-	}
 
 	png_set_IHDR(png_ptr, info_ptr, WIDTH, height, 8, PNG_COLOR_TYPE_RGB,
 	             PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE,
@@ -67,9 +64,9 @@ png_compose(FILE *fd, Channel *red, Channel *green, Channel *blue)
 
 			/* Some channels may be shorter than others. In that case, just
 			 * write black pixels to that channel */
-			red_px  = (pixel_idx >= red->len ? 0 : red->data[pixel_idx]);
-			green_px  = (pixel_idx >= green->len ? 0 : green->data[pixel_idx]);
-			blue_px  = (pixel_idx >= blue->len ? 0 : blue->data[pixel_idx]);
+			red_px = (pixel_idx >= red->len ? 0 : red->data[pixel_idx]);
+			green_px = (pixel_idx >= green->len ? 0 : green->data[pixel_idx]);
+			blue_px = (pixel_idx >= blue->len ? 0 : blue->data[pixel_idx]);
 
 			row_ptr[col*3+0] = red_px;
 			row_ptr[col*3+1] = green_px;

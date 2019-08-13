@@ -11,7 +11,7 @@ diff_src(SoftSource *src)
 {
 	SoftSource *ret;
 
-	ret = safealloc(sizeof(ret));
+	ret = safealloc(sizeof(*ret));
 	ret->read = diff_read;
 	ret->close = diff_close;
 	ret->_backend = src;
@@ -22,7 +22,6 @@ diff_src(SoftSource *src)
 static void
 diff_close(SoftSource *self)
 {
-	free(self->_backend);
 	free(self);
 }
 

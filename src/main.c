@@ -210,6 +210,9 @@ main(int argc, char *argv[])
 	pkt_deinit(pp);
 	viterbi->close(viterbi);
 	correlator->close(correlator);
+	if (diffcoding) {
+		diff->close(diff);
+	}
 	src->close(src);
 
 	/* Write the 3 decoded channels to a PNG if there's any data in them */
