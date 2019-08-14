@@ -10,6 +10,19 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+typedef enum {
+	PHASE_90,
+	PHASE_180,
+	PHASE_270,
+} Phase;
+
+void bit_expand(uint8_t *dst, const uint8_t *src, size_t len);
+int  correlation(const uint8_t *x, const uint8_t *y, int len);
+void iq_rotate_hard(uint8_t *buf, size_t count, Phase p);
+void iq_rotate_soft(int8_t *buf, size_t count, Phase p);
+void iq_reverse_hard(uint8_t *buf, size_t count);
+void iq_reverse_soft(int8_t *buf, size_t count);
+
 int   count_ones(uint8_t val);
 void  fatal(char *msg);
 char* gen_fname(int apid);

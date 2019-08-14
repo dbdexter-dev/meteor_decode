@@ -1,8 +1,8 @@
 # LRPT decoder
 
 This is a free, open-source LRPT decoder. It reads samples from a 8-bit soft-QPSK
-file and outputs an image displaying the specified APIDs.
-
+file and outputs an image displaying the specified APIDs. It currently supports
+Meteor-M N2 and Meteor-M N2-2 in 72k mode.
 
 ## Compiling and installing
 

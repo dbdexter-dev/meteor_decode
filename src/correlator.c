@@ -7,12 +7,6 @@
 #include "utils.h"
 #include "viterbi.h"
 
-typedef enum {
-	PHASE_90,
-	PHASE_180,
-	PHASE_270,
-} Phase;
-
 typedef struct {
 	uint8_t (*patterns)[64];
 	size_t pattern_count;
@@ -29,18 +23,8 @@ static void correlator_soft_fix(Correlator *c, int8_t* frame, size_t len);
 
 static void soft_to_hard(uint8_t *dst, const int8_t *src, size_t nbytes);
 static void add_pattern(Correlator *self, const uint8_t *pattern);
-static void iq_rotate_hard(uint8_t *buf, size_t count, Phase p);
-static void iq_rotate_soft(int8_t *buf, size_t count, Phase p);
-static void iq_reverse_hard(uint8_t *buf, size_t count);
-static void iq_reverse_soft(int8_t *buf, size_t count);
 static int  qw_correlate(const uint8_t *soft, const uint8_t *hard);
 
-/* 90 degree phase shift + phase mirroring lookup table
- * XXX HARD BYTES, NOT SOFT SAMPLES XXX
- */
-static int8_t _rot_lut[256];
-static int8_t _inv_lut[256];
-static int    _initialized = 0;
 
 /* Initialize the correlator */
 SoftSource*
@@ -60,14 +44,6 @@ correlator_init_soft(SoftSource *src, uint8_t syncword[PATT_SIZE])
 	c->active_correction = 0;
 	c->buffer_offset = 0;
 	c->src = src;
-
-	if (!_initialized) {
-		for (i=0; i<255; i++) {
-			_rot_lut[i] = ((i & 0x55) ^ 0x55) << 1 | (i & 0xAA) >> 1;
-			_inv_lut[i] = (i & 0x55) << 1 | (i & 0xAA) >> 1;
-		}
-		_initialized = 1;
-	}
 
 	/* Correlate for all 8 possible rotations of the syncword */
 	for (i=0; i<4; i++) {
@@ -259,34 +235,7 @@ correlator_soft_fix(Correlator *self, int8_t* frame, size_t len)
 	}
 }
 
-/* Compute the correlation index between two buffers */
-int
-correlation(const uint8_t *x, const uint8_t *y, int len)
-{
-	int i, ret;
-
-	ret = len * 8;
-	for (i=0; i<len; i++) {
-		ret -= count_ones(*x++ ^ *y++);
-	}
-
-	return ret;
-}
-
 /* Static functions {{{*/
-/* Expand hard 1-bit samples to 8 bits */
-static void
-bit_expand(uint8_t *dst, const uint8_t *src, size_t len)
-{
-	int i, j;
-
-	for (i=0; i<(int)len; i++) {
-		for (j=0; j<8; j++) {
-			dst[i*8+j] = (src[i] >> (7-j)) & 0x01;
-		}
-	}
-}
-
 /* Add a pattern to the list we'll be looking for */
 static void
 add_pattern(Correlator *self, const uint8_t *pattern)
@@ -298,76 +247,6 @@ add_pattern(Correlator *self, const uint8_t *pattern)
 	bit_expand(self->patterns[self->pattern_count-1], pattern, PATT_SIZE);
 }
 
-/* Rotate a bit pattern 90 degrees in phase */
-static void
-iq_rotate_hard(uint8_t *buf, size_t count, Phase p)
-{
-	size_t i;
-
-	for (i=0; i<count; i++) {
-		if (p == PHASE_90 || p == PHASE_270) {
-			buf[i] = _rot_lut[buf[i]];
-		}
-		if (p == PHASE_180 || p == PHASE_270) {
-			buf[i] ^= 0xFF;
-		}
-	}
-}
-
-static void
-iq_rotate_soft(int8_t *buf, size_t count, Phase p)
-{
-	size_t i;
-	int8_t tmp;
-
-	switch(p) {
-	case PHASE_90:
-		for (i=0; i<count; i+=2) {
-			tmp = buf[i];
-			buf[i] = -buf[i+1];
-			buf[i+1] = tmp;
-		}
-		break;
-	case PHASE_180:
-		for (i=0; i<count; i++) {
-			buf[i] = -buf[i];
-		}
-		break;
-	case PHASE_270:
-		for (i=0; i<count; i+=2) {
-			tmp = buf[i];
-			buf[i] = buf[i+1];
-			buf[i+1] = -tmp;
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-/* Flip I<->Q in a bit pattern */
-static void
-iq_reverse_hard(uint8_t *buf, size_t count)
-{
-	size_t i;
-
-	for (i=0; i<count; i++) {
-		buf[i] = _inv_lut[buf[i]];
-	}
-}
-
-static void
-iq_reverse_soft(int8_t *buf, size_t count)
-{
-	size_t i;
-	int8_t tmp;
-
-	for (i=0; i<count; i+=2) {
-		tmp = buf[i];
-		buf[i] = buf[i+1];
-		buf[i+1] = tmp;
-	}
-}
 
 /* Convert soft samples into a byte-expanded bit representation */
 static void
@@ -378,7 +257,7 @@ soft_to_hard(uint8_t *hard, const int8_t *soft, size_t nbytes)
 	}
 }
 
-/* Correlate a soft qword and a hard qword */
+/* Correlate two bit-expanded qwords */
 static int
 qw_correlate(const uint8_t *soft, const uint8_t *hard)
 {

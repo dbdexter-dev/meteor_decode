@@ -108,6 +108,7 @@ main(int argc, char *argv[])
 		diff = diff_src(src);
 		correlator = correlator_init_soft(diff, encoded_syncword);
 	} else {
+		diff = NULL;
 		correlator = correlator_init_soft(src, encoded_syncword);
 	}
 
