@@ -230,6 +230,7 @@ usage(const char *pname)
 			"   -o, --output <file>     Output composite png to <file>\n"
 			"   -q, --quiet             Only dispaly overall decoding stats\n"
 			"   -s, --statfile          Write the .stat file containing timing data\n"
+			"   -S, --split             Write each APID in a separate png\n"
 			"\n"
 			"   -h, --help              Print this help screen\n"
 			"   -v, --version           Print version info\n"

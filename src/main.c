@@ -27,7 +27,7 @@ main(int argc, char *argv[])
 	int mcu_nr, seq_delta, last_seq;
 	uint8_t encoded_syncword[2*sizeof(SYNCWORD)];
 	char *stat_fname;
-	FILE *out_fd = NULL, *stat_fd = NULL;
+	FILE *out_fd[3] = {NULL, NULL, NULL}, *stat_fd = NULL;
 
 	SoftSource *src, *diff, *correlator;
 	HardSource *viterbi;
@@ -40,19 +40,21 @@ main(int argc, char *argv[])
 	/* Command-line changeable variables {{{*/
 	int apid_list[3];
 	int diffcoding;
-	char *out_fname, *in_fname;
+	int split_channels;
+	char *out_fname[3] = {NULL, NULL, NULL}, *in_fname, *tmp_out_fname;
 	int free_fname_on_exit;
 	int quiet;
 	/*}}}*/
 	/* Initialize command-line overridable parameters {{{*/
 	quiet = 0;
-	out_fname = NULL;
+	out_fname[0] = NULL;
 	free_fname_on_exit = 0;
 	write_statfile = 0;
 	diffcoding = 0;
 	apid_list[0] = 68;
 	apid_list[1] = 65;
 	apid_list[2] = 64;
+	split_channels = 0;
 	/*}}}*/
 	/* Parse command line args {{{ */
 	if (argc < 2) {
@@ -72,7 +74,7 @@ main(int argc, char *argv[])
 			usage(argv[0]);
 			break;
 		case 'o':
-			out_fname = optarg;
+			tmp_out_fname = optarg;
 			break;
 		case 'q':
 			quiet = 1;
@@ -80,9 +82,12 @@ main(int argc, char *argv[])
 		case 's':
 			write_statfile = 1;
 			break;
+		case 'S':
+			split_channels = 1;
+			break;
 		case 'v':
 			version();
-			break;
+			exit(0);
 		}
 	}
 
@@ -90,14 +95,28 @@ main(int argc, char *argv[])
 	if (argc - optind < 1) {
 		usage(argv[0]);
 	}
+	/*}}}*/
 
 	in_fname = argv[optind];
 
-	if (!out_fname) {
-		out_fname = gen_fname(-1);
+	if (!tmp_out_fname) {
+		if (split_channels) {
+			out_fname[0] = gen_fname(apid_list[0]);
+			out_fname[1] = gen_fname(apid_list[1]);
+			out_fname[2] = gen_fname(apid_list[2]);
+		} else {
+			out_fname[0] = gen_fname(-1);
+		}
 		free_fname_on_exit = 1;
+	} else if (split_channels) {
+		for (i=0; i<3; i++) {
+			out_fname[i] = safealloc(strlen(tmp_out_fname) + sizeof("-AA.png"));
+			sprintf(out_fname[i], "%s-%02d.png", tmp_out_fname, apid_list[i]);
+		}
+		free_fname_on_exit = 1;
+	} else {
+		out_fname[0] = tmp_out_fname;
 	}
-	/*}}}*/
 
 	splash();
 
@@ -119,14 +138,22 @@ main(int argc, char *argv[])
 	ch[1] = channel_init(apid_list[1]);
 	ch[2] = channel_init(apid_list[2]);
 
-	/* Open/create the output PNG */
-	if (!(out_fd = fopen(out_fname, "wb"))) {
+	/* Open/create the output PNG/PNGs */
+	if (!(out_fd[0] = fopen(out_fname[0], "wb"))) {
 		fatal("Could not create/open output file");
+	}
+	if (split_channels) {
+		if (!(out_fd[1] = fopen(out_fname[1], "wb"))) {
+			fatal("Could not create/open output file");
+		}
+		if (!(out_fd[2] = fopen(out_fname[2], "wb"))) {
+			fatal("Could not create/open output file");
+		}
 	}
 
 	if (write_statfile) {
-		stat_fname = safealloc(strlen(out_fname) + 5 + 1);
-		sprintf(stat_fname, "%s.stat", out_fname);
+		stat_fname = safealloc(strlen(out_fname[0]) + 5 + 1);
+		sprintf(stat_fname, "%s.stat", out_fname[0]);
 		if (!(stat_fd = fopen(stat_fname, "w"))) {
 			fatal("Could not create/open stat file");
 		}
@@ -218,7 +245,13 @@ main(int argc, char *argv[])
 
 	/* Write the 3 decoded channels to a PNG if there's any data in them */
 	if (valid_count > 0) {
-		png_compose(out_fd, ch[0], ch[1], ch[2]);
+		if (split_channels) {
+			png_compose(out_fd[0], ch[0], ch[0], ch[0]);
+			png_compose(out_fd[1], ch[1], ch[1], ch[1]);
+			png_compose(out_fd[2], ch[2], ch[2], ch[2]);
+		} else {
+			png_compose(out_fd[0], ch[0], ch[1], ch[2]);
+		}
 
 		/* Write the .stat file used by software like MeteorGIS */
 		if (stat_fd) {
@@ -232,16 +265,16 @@ main(int argc, char *argv[])
 	/* Deinitialize/free all allocated resources */
 	for (i=0; i<3; i++) {
 		channel_deinit(ch[i]);
-	}
-	if (out_fd) {
-		fclose(out_fd);
+		if (out_fd[i]) {
+			fclose(out_fd[i]);
+		}
+		if (free_fname_on_exit && out_fname[i]) {
+			free(out_fname[i]);
+		}
 	}
 
 	if (stat_fd) {
 		fclose(stat_fd);
-	}
-	if (free_fname_on_exit) {
-		free(out_fname);
 	}
 
 	return 0;
