@@ -28,7 +28,7 @@ src_soft_open(const char *path, int bps) {
 	}
 
 	backend->bps = bps;
-	if(!(backend->fd = fopen(path, "r"))) {
+	if(!(backend->fd = fopen(path, "rb"))) {
 		fatal("Could not find specified file");
 		/* Not reached */
 		return NULL;

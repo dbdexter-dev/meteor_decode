@@ -120,7 +120,7 @@ main(int argc, char *argv[])
 	ch[2] = channel_init(apid_list[2]);
 
 	/* Open/create the output PNG */
-	if (!(out_fd = fopen(out_fname, "w"))) {
+	if (!(out_fd = fopen(out_fname, "wb"))) {
 		fatal("Could not create/open output file");
 	}
 
