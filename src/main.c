@@ -154,7 +154,7 @@ main(int argc, char *argv[])
 	if (write_statfile) {
 		stat_fname = safealloc(strlen(out_fname[0]) + 5 + 1);
 		sprintf(stat_fname, "%s.stat", out_fname[0]);
-		if (!(stat_fd = fopen(stat_fname, "w"))) {
+		if (!(stat_fd = fopen(stat_fname, "wb"))) {
 			fatal("Could not create/open stat file");
 		}
 	}
