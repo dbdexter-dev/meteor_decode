@@ -77,7 +77,7 @@ typedef struct _cadu {
 }__attribute__((packed)) Cadu;
 
 /* Defined in packet.c */
-const uint8_t SYNCWORD[4];
+extern const uint8_t SYNCWORD[4];
 
 uint32_t vcdu_counter(const Vcdu *p);
 int      vcdu_header_offset(const Vcdu *p);
