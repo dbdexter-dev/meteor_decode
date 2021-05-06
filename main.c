@@ -13,6 +13,8 @@
 #include "output/png_out.h"
 #endif
 
+#define CLR "\033[1K\r"
+
 #define NUM_CHANNELS 3
 #define MAX_FNAME_LEN 256
 #define SHORTOPTS "7a:bdhio:qstv"
@@ -47,7 +49,8 @@ main(int argc, char *argv[])
 	char split_fname[MAX_FNAME_LEN], stat_fname[MAX_FNAME_LEN], apid_70_fname[MAX_FNAME_LEN];
 	char auto_out_fname[MAX_FNAME_LEN];
 	size_t file_len;
-	int mpdu_count=0, raw_percent, height;
+	int mpdu_count=0, height;
+	float percent;
 	int diffcoded, interleaved, split_output, write_stat, write_apid_70, fancy_output;
 	int i, j, c, retval;
 	int duplicate;
@@ -200,10 +203,10 @@ main(int argc, char *argv[])
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
 		if (!_quiet && (status == MPDU_READY || status == STATS_ONLY)) {
-			printf(fancy_output ? "\033[2K\r" : "\n");
-			raw_percent = (100*100*ftell(_soft_file))/file_len;
-			printf("%3d.%02d%% vit(avg): %4d rs(sum): %2d",
-					raw_percent/100, raw_percent%100,
+			printf(fancy_output ? CLR : "\n");
+			percent = 100.0*(float)ftell(_soft_file)/file_len;
+			printf("%6.2f%% vit(avg): %4d rs(sum): %2d",
+					percent,
 					decode_get_vit(), decode_get_rs());
 		}
 
@@ -220,7 +223,7 @@ main(int argc, char *argv[])
 	height = MAX(ch[0]->offset, MAX(ch[1]->offset, ch[2]->offset))
 	       / (MCU_PER_LINE*8);
 
-	if (!_quiet) printf(fancy_output ? "\033[2K\r" : "\n\n");
+	if (!_quiet) printf(fancy_output ? CLR : "\n\n");
 	printf("MPDUs received: %d (%d lines)\n", mpdu_count, height);
 	printf("Onboard time elapsed: %s\n", mpdu_time(_last_time - _first_time));
 
@@ -265,7 +268,7 @@ main(int argc, char *argv[])
 				if (write_stat) {
 					sprintf(stat_fname, "%s_%02d.stat", output_fname, ch[i]->apid);
 
-					if((stat_fd = fopen(stat_fname, "w"))) {
+					if((stat_fd = fopen(stat_fname, "wb"))) {
 						fprintf(stat_fd, "%s\r\n", mpdu_time(_first_time));
 						fprintf(stat_fd, "%s\r\n", mpdu_time(_last_time - _first_time));
 						fprintf(stat_fd, "0\r\n");  /* Not sure what this is? */
@@ -293,7 +296,7 @@ main(int argc, char *argv[])
 			if (write_stat) {
 				sprintf(stat_fname, "%s.stat", output_fname);
 
-				if((stat_fd = fopen(stat_fname, "w"))) {
+				if((stat_fd = fopen(stat_fname, "wb"))) {
 					fprintf(stat_fd, "%s\r\n", mpdu_time(_first_time));
 					fprintf(stat_fd, "%s\r\n", mpdu_time(_last_time - _first_time));
 					fprintf(stat_fd, "0\r\n");  /* Not sure what this is? */
