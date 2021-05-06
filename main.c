@@ -318,20 +318,16 @@ static void
 process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 {
 	static int first = 1;
-	static uint16_t first_mpdu_seq;
-	int i;
+	static int first_seq;
 	unsigned int seq, apid, lines_lost;
 	uint8_t strip[MCU_PER_MPDU][8][8];
+	int i, tmp;
 
 	seq = mpdu_seq(mpdu);
 	apid = mpdu_apid(mpdu);
 	_last_time = mpdu_raw_time(mpdu);
 
-	if (first) {
-		first = 0;
-		_first_time = _last_time;
-		first_mpdu_seq = seq;
-	}
+	if (first) _first_time = _last_time;
 
 	/* Print status line */
 	if (!_quiet) {
@@ -350,7 +346,7 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 			/* Map APID to channel. In order:
 			 * - Use the channel with the APID of this packet
 			 * - If no channel has the current APID, see if the one preferred by
-			 *   this APID is free and use it.
+			 *   this APID is free and use it
 			 * - If the preferred channel isn't free, pick the first one that is
 			 *   free
 			 * - If all else fails, discard this packet
@@ -366,16 +362,16 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 					ch[i]->apid = apid;
 				}
 			}
-
 			if (i == NUM_CHANNELS || ch[i]->apid != (int)apid) break;
+
 
 			/* AVHRR image data: decode JPEG into raw pixel data */
 			avhrr_decode(strip, &mpdu->data.mcu.avhrr, mpdu_len(mpdu));
 
-			/* Compensate for this channel being one or more strips out
-			 * of sync with the others */
-			if (ch[i]->mpdu_seq < 0 && _last_time != _first_time) {
-				lines_lost = 1 + (seq - first_mpdu_seq)/MPDU_PER_PERIOD;
+			/* Estimate number of lines lost compared to other channels based on
+			 * timestamps, and compensate for those */
+			if (ch[i]->mpdu_seq < 0) {
+				lines_lost = (_last_time - _first_time) / US_PER_LINE;
 				ch[i]->mpdu_seq = (seq - MPDU_PER_PERIOD*lines_lost - 1 + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
 			}
 
@@ -397,6 +393,8 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 		default:
 			break;
 	}
+
+	if (first) first = 0;
 }
 
 static void

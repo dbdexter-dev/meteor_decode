@@ -1,4 +1,4 @@
-**/*.pdf
 **/tags
 build/
+docs/*.pdf
 **/cachegrind.out*

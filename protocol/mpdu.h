@@ -10,6 +10,7 @@
 #define MPDU_PER_LINE 14
 #define MPDU_PER_PERIOD (3*MPDU_PER_LINE + 1)
 #define MCU_PER_LINE (MCU_PER_MPDU * MPDU_PER_LINE)
+#define US_PER_LINE (1220*1000) /* Imprecise, lower bound only */
 
 typedef struct {
 	uint8_t day[2];
