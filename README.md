@@ -1,8 +1,8 @@
 Meteor-M series LRPT decoder
 =======================================
 
-This is a free, open-source LRPT decoder. It reads samples from a 8-bit 
-soft-QPSK file and outputs an image displaying the specified APIDs. 
+This is a free, open-source LRPT decoder. It reads samples from a 8-bit
+soft-QPSK file and outputs an image displaying the specified APIDs.
 
 Features:
 - Support for regular (72k) and interleaved (80k) modes
@@ -51,7 +51,7 @@ Usage
 -----
 
 ```
-meteor_decode [options] input.s -o output_image
+meteor_decode [options] input.s
 	-7, --70               Dump APID70 data in a separate file
 	-a, --apid R,G,B       Specify APIDs to parse (default: autodetect)
 	-b, --batch            Batch mode (disable all non-printable characters)

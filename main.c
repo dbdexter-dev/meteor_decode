@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,8 +43,9 @@ static struct option longopts[] = {
 int
 main(int argc, char *argv[])
 {
-	char *output_fname=NULL, *extension;
+	char *input_fname, *output_fname=NULL, *extension;
 	char split_fname[MAX_FNAME_LEN], stat_fname[MAX_FNAME_LEN], apid_70_fname[MAX_FNAME_LEN];
+	char auto_out_fname[MAX_FNAME_LEN];
 	size_t file_len;
 	int mpdu_count=0, raw_percent, height;
 	int diffcoded, interleaved, split_output, write_stat, write_apid_70;
@@ -118,13 +120,30 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (!output_fname) {
-		usage(argv[0]);
-		return 1;
-	}
 	if (argc - optind < 1) {
 		usage(argv[0]);
 		return 1;
+	}
+
+	input_fname = argv[optind];
+
+	/* If no output filename is specified, make one up based on the input file */
+	if (!output_fname) {
+		/* Find where extension starts */
+		for (i = strlen(input_fname); i>=0 && input_fname[i] != '.'; i--);
+		if (i < 0) i = strlen(input_fname);
+
+		if (i > MAX_FNAME_LEN - 4) {
+			fprintf(stderr, "Automatic filename too big, please specify a different filename\n");
+			usage(argv[0]);
+			return 1;
+		}
+
+		/* Copy input file name without extension, add ".bmp" extension to it */
+		memcpy(auto_out_fname, input_fname, i);
+		sprintf(auto_out_fname + i, ".bmp");
+
+		output_fname = auto_out_fname;
 	}
 
 	img_init = bmp_init;
@@ -143,7 +162,7 @@ main(int argc, char *argv[])
 	/* }}} */
 
 	/* Open input file */
-	if (!(_soft_file = fopen(argv[optind], "rb"))) {
+	if (!(_soft_file = fopen(input_fname, "rb"))) {
 		fprintf(stderr, "Could not open input file\n");
 		return 1;
 	}

@@ -90,7 +90,7 @@ version()
 void
 usage(char *execname)
 {
-	fprintf(stderr, "Usage: %s [options] input_s -o output_image\n", execname);
+	fprintf(stderr, "Usage: %s [options] input.s\n", execname);
 	fprintf(stderr,
 			"   -7, --70               Dump APID70 data in a separate file\n"
 	        "   -a, --apid R,G,B       Specify APIDs to parse (default: autodetect)\n"
