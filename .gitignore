@@ -1,5 +1,4 @@
 **/*.pdf
 **/tags
-**/*.o
-src/meteor_decode
+build/
 **/cachegrind.out*
