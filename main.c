@@ -48,9 +48,9 @@ main(int argc, char *argv[])
 	char auto_out_fname[MAX_FNAME_LEN];
 	size_t file_len;
 	int mpdu_count=0, raw_percent, height;
-	int diffcoded, interleaved, split_output, write_stat, write_apid_70;
+	int diffcoded, interleaved, split_output, write_stat, write_apid_70, fancy_output;
 	int i, j, c, retval;
-	int fancy_output;
+	int duplicate;
 	Mpdu mpdu;
 	Channel ch_instance[NUM_CHANNELS], *ch[NUM_CHANNELS];
 	RawChannel ch_apid_70;
@@ -229,19 +229,25 @@ main(int argc, char *argv[])
 		if (split_output) {
 			/* Separate file extension from the rest of the file name */
 			for (extension=output_fname + strlen(output_fname); *extension != '.' && extension > output_fname; extension--);
-			if (extension == output_fname) extension = output_fname + strlen(output_fname);
-			*extension++ = '\0';
+			if (extension == output_fname) {
+				extension = output_fname + strlen(output_fname);
+			} else {
+				*extension++ = '\0';
+			}
 
 			/* Write each channel separately */
 			for (i=0; i<NUM_CHANNELS; i++) {
 				/* If we've already written this channel, don't do it again */
+				duplicate = 0;
 				for (j=0; j<i; j++) {
-					if (apids[i] == apids[j]) {
-						continue;
+					if (ch[i]->apid == ch[j]->apid) {
+						duplicate = 1;
+						break;
 					}
 				}
+				if (duplicate) continue;
 
-				sprintf(split_fname, "%s_%02d.%s", output_fname, ch[i]->apid, extension);
+				sprintf(split_fname, "%s_%02d%s%s", output_fname, ch[i]->apid, *extension ? "." : "", extension);
 
 				printf("Saving channel to %s... ", split_fname);
 				fflush(stdout);
@@ -318,10 +324,9 @@ static void
 process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 {
 	static int first = 1;
-	static int first_seq;
 	unsigned int seq, apid, lines_lost;
 	uint8_t strip[MCU_PER_MPDU][8][8];
-	int i, tmp;
+	int i;
 
 	seq = mpdu_seq(mpdu);
 	apid = mpdu_apid(mpdu);
