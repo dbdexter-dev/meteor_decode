@@ -61,7 +61,6 @@ main(int argc, char *argv[])
 	DecoderState status;
 	void *img_out;
 	int apids[NUM_CHANNELS];
-	FILE *stat_fd;
 
 	/* Pointers to functions to initialize, write and close images (will point
 	 * to different functions based on the output format) */
@@ -257,11 +256,12 @@ main(int argc, char *argv[])
 				}
 				if (duplicate) continue;
 
+				/* Generate a filename for the current channel */
 				sprintf(split_fname, "%s_%02d%s%s", output_fname, ch[i]->apid, *extension ? "." : "", extension);
-
 				printf("Saving channel to %s... ", split_fname);
 				fflush(stdout);
 
+				/* Dump channel to monochrome image */
 				retval  = img_init(&img_out, split_fname, MCU_PER_LINE*8, height, 1);
 				retval |= img_write_mono(img_out, ch[i]);
 				retval |= img_finalize(img_out);
@@ -324,19 +324,29 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 	static int first = 1;
 	unsigned int seq, apid, lines_lost;
 	uint8_t strip[MCU_PER_MPDU][8][8];
+	uint64_t time;
 	int i;
 
 	seq = mpdu_seq(mpdu);
 	apid = mpdu_apid(mpdu);
-	_last_time = mpdu_raw_time(mpdu);
-
-	if (first) _first_time = _last_time;
+	time = mpdu_raw_time(mpdu);
 
 	/* Print status line */
 	if (!_quiet) {
 		printf("\tAPID %2d  seq: %d  %s",
-				apid, decode_get_vcdu_seq(), mpdu_time(_last_time));
+				apid, decode_get_vcdu_seq(), mpdu_time(time));
 	}
+
+	if (first) _first_time = time;
+
+	/* When sat reboots, its time is highly unreliable, and can jump backwards
+	 * which makes things... weird. Handle that case by discarding the packets */
+	if (time < _first_time && _first_time - time < US_PER_DAY/2) {
+		printf(" Invalid timestamp");
+		return;
+	}
+
+	_last_time = time;
 
 	/* Parse packet based on the APID */
 	switch (apid) {
@@ -374,7 +384,7 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 			/* Estimate number of lines lost compared to other channels based on
 			 * timestamps, and compensate for those */
 			if (ch[i]->mpdu_seq < 0) {
-				lines_lost = (_last_time - _first_time) / US_PER_LINE;
+				lines_lost = (_last_time - _first_time) / MPDU_US_PER_LINE;
 				ch[i]->mpdu_seq = (seq - MPDU_PER_PERIOD*lines_lost - 1 + MPDU_MAX_SEQ) % MPDU_MAX_SEQ;
 			}
 
