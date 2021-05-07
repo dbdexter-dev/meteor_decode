@@ -48,7 +48,7 @@ autocorrelate(enum phase *rotation, int period, uint8_t *restrict hard, int len)
 	}
 
 	best_idx = 0;
-	best_corr = ones_count[0] * 9 / 10;
+	best_corr = ones_count[0];
 	for (i=1; i<(int)LEN(ones_count); i++) {
 		if (ones_count[i] < best_corr) {
 			best_corr = ones_count[i];

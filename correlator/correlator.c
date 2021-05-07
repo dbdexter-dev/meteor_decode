@@ -6,7 +6,6 @@
 #include "utils.h"
 
 #define ROTATIONS 4
-#define CORR_THR 45
 
 static uint32_t hard_rotate_u32(uint32_t word, enum phase amount);
 static inline int correlate_u64(uint64_t x, uint64_t y);

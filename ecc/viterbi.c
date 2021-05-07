@@ -147,40 +147,53 @@ update_metrics(int8_t x, int8_t y, int depth)
 	int lm0, lm1, lm2, lm3;
 	int *const metric = _vit.metric;
 	int *const next_metric = _vit.next_metric;
+	uint8_t *const prev_state = _vit.prev[depth];
 
 	for (state=0; state<NUM_STATES/2; state+=2) {
-		/* Compute the two possible next states, and the two related states */
+		/* Compute the two possible next states */
 		ns0 = state;
 		ns1 = state | (1 << (K-1));
+
+		/* Fetch the metrics of the two possible predecessors */
+		metric0 = metric[state<<1];
+		metric1 = metric[(state<<1)+1];
+
+		/* Select the state that has the best metric between the two */
+		best01 = BETTER_METRIC(metric0, metric1) ? metric0 : metric1;
+		prev01 = BETTER_METRIC(metric0, metric1) ? (state<<1) : (state<<1) + 1;
+
+		/* Compute the metrics of the ns0/ns1 transitions */
+		lm0 = local_metrics[_output_lut[state<<1]]; /* metric to ns0/1 given in=0 */
+		lm1 = TWIN_metric(lm0, x, y);               /* metric to ns0/1 given in=1 */
+
+		/* Metric of the next state = best predecessor metric + local metric */
+		next_metric[ns0] = best01 + lm0;
+		next_metric[ns1] = best01 + lm1;
+
+		/* ns0 and ns1 have the same ancestor, just different metrics. Save it
+		 * only once for both */
+		prev_state[ns0] = prev01;
+
+		/* ns2 and ns3 are very closely related to ns0 and ns1: they have the
+		 * same local metrics as ns1 and ns0 respectively. Computing them here
+		 * reduces memory accesses, and improves cache locality.
+		 * NOTE: this only works because the two most significant bits of the
+		 * two generator polynomials are different */
 		ns2 = ns0 | 1;
 		ns3 = ns1 | 1;
 
-		/* Compute the four output metrics for the four states we're currently
-		 * considering, and cache their associated previous metrics. Takes
-		 * advantage of symmetries between the metrics for two states that share
-		 * the same ns0>>1/ns1>>1 */
-		lm0 = local_metrics[_output_lut[state<<1]]; /* metric to ns0/1 given in=0 */
-		lm1 = TWIN_metric(lm0, x, y);               /* metric to ns0/1 given in=1 */
-		lm2 = lm1;                                  /* metric to ns2/3 given in=0 */
-		lm3 = TWIN_metric(lm2, x, y);               /* metric to ns2/3 given in=1 */
-
-		metric0 = metric[state<<1];
-		metric1 = metric[(state<<1)+1];
 		metric2 = metric[(state<<1)+2];
 		metric3 = metric[(state<<1)+3];
 
-		best01 = BETTER_METRIC(metric0, metric1) ? metric0 : metric1;
-		prev01 = BETTER_METRIC(metric0, metric1) ? (state<<1) : (state<<1) + 1;
 		best23 = BETTER_METRIC(metric2, metric3) ? metric2 : metric3;
 		prev23 = BETTER_METRIC(metric2, metric3) ? (state<<1) + 2 : (state<<1) + 3;
 
-		next_metric[ns0] = best01 + lm0;
-		next_metric[ns1] = best01 + lm1;
+		lm2 = lm1;                          /* metric to ns2/3 given in=0 */
+		lm3 = TWIN_metric(lm2, x, y);       /* metric to ns2/3 given in=1 */
+
 		next_metric[ns2] = best23 + lm2;
 		next_metric[ns3] = best23 + lm3;
-
-		_vit.prev[depth][ns0] = prev01;
-		_vit.prev[depth][ns2] = prev23;
+		prev_state[ns2] = prev23;
 	}
 
 	/* Swap metric and next_metric for the next iteration */

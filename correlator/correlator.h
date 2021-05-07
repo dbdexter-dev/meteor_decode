@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include "utils.h"
 
+#define CORR_THR 42     /* Empirical minimum correlation threshold for offset 0:
+                         * if the correlation is > this value, we assume that
+                         * the packet starts at offset 0 */
+
 /**
  * Initialize the correlator with a synchronization sequence
  *
