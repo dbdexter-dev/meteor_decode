@@ -90,22 +90,21 @@ bmp_write_rgb(void *_bmp, Channel *red, Channel *green, Channel *blue)
 {
 	BmpOut *bmp = (BmpOut*)_bmp;
 	unsigned int i, col;
-	unsigned long r, g, b;
 	uint8_t *rgbrow;
 	int offset;
 
 	if (!bmp || !bmp->ready) return 1;
 
-	r = g = b = 0;
 	offset = (bmp->height-1)*bmp->width;
 
 	for (i=0; i<bmp->height; i++) {
 		rgbrow = bmp->rgbrow;
 
 		for (col=0; col<bmp->width; col++) {
-			*rgbrow++ = (b < blue->offset) ? blue->pixels[offset + b++] : 0;
-			*rgbrow++ = (g < green->offset) ? green->pixels[offset + g++] : 0;
-			*rgbrow++ = (r < red->offset) ? red->pixels[offset + r++] : 0;
+			*rgbrow++ = (offset < blue->offset) ? blue->pixels[offset] : 0;
+			*rgbrow++ = (offset < green->offset) ? green->pixels[offset] : 0;
+			*rgbrow++ = (offset < red->offset) ? red->pixels[offset] : 0;
+			offset++;
 		}
 
 		fwrite(bmp->rgbrow, 3*bmp->width, 1, bmp->fd);

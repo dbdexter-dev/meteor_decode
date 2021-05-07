@@ -59,8 +59,7 @@ int
 png_write_rgb(void *_png, Channel *red, Channel *green, Channel *blue)
 {
 	PngOut *png = _png;
-	unsigned int i, col;
-	unsigned long r, g, b;
+	unsigned int i, col, offset;
 	png_structp png_ptr = (png_structp)png->png_ptr;
 	png_infop info_ptr = (png_infop)png->info_ptr;
 	uint8_t *rgbrow;
@@ -74,16 +73,17 @@ png_write_rgb(void *_png, Channel *red, Channel *green, Channel *blue)
 		return 1;
 	}
 
-	r = g = b = 0;
+	offset = 0;
 
 	/* Interleave the three color channels */
 	for (i=0; i<png->height; i++) {
 		rgbrow = png->rgbrow;
 
 		for (col=0; col<png->width; col++) {
-			*rgbrow++ = (r < red->offset) ? red->pixels[r++] : 0;
-			*rgbrow++ = (g < green->offset) ? green->pixels[g++] : 0;
-			*rgbrow++ = (b < blue->offset) ? blue->pixels[b++] : 0;
+			*rgbrow++ = (offset < red->offset) ? red->pixels[offset] : 0;
+			*rgbrow++ = (offset < green->offset) ? green->pixels[offset] : 0;
+			*rgbrow++ = (offset < blue->offset) ? blue->pixels[offset] : 0;
+			offset++;
 		}
 
 		png_write_row(png_ptr, png->rgbrow);

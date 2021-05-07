@@ -12,6 +12,8 @@ void
 mpdu_parser_init()
 {
 	_state = IDLE;
+	_offset = 0;
+	_frag_offset = 0;
 }
 
 ParserStatus
@@ -29,6 +31,12 @@ mpdu_reconstruct(Mpdu *dst, Vcdu *src)
 
 	/* If the VCDU contains known bad data, skip it completely */
 	if (!vcdu_version(src) || !vcdu_type(src)) return PROCEED;
+
+	/* Prevent buffer overflows when the fragment offset gets out of hand */
+	if (_frag_offset >= sizeof(*dst)) {
+		mpdu_parser_init();
+		return PROCEED;
+	}
 
 	switch (_state) {
 		case IDLE:
