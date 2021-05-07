@@ -10,6 +10,7 @@ raw_channel_init(RawChannel *ch, const char *fname)
 void
 raw_channel_write(RawChannel *ch, uint8_t *data, int len)
 {
+	if (!ch) return;
 	fwrite(data, len, 1, ch->fd);
 }
 

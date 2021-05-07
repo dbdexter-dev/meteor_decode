@@ -90,7 +90,7 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 			if (errors < 0) {
 				mpdu_parser_init();
 				_state = VIT_SECOND;
-				return STATS_ONLY;
+				break;
 			}
 
 			_vcdu_seq = vcdu_counter(&cadu.data);
@@ -116,6 +116,7 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 					sizeof(Cadu)-VITERBI_DELAY);
 			_vit = vit / sizeof(Cadu);
 			_state = READ;
+			return STATS_ONLY;
 			break;
 
 		default:

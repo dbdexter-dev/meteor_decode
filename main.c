@@ -21,8 +21,9 @@
 
 static int read_wrapper(int8_t *src, size_t len);
 static int preferred_channel(int apid);
-static void parse_apids(int *apids, char *optarg);
+static int parse_apids(int *apids, char *optarg);
 static void process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70);
+static void write_stat_and_close(FILE *fd);
 
 static FILE *_soft_file;
 static int _quiet;
@@ -88,7 +89,11 @@ main(int argc, char *argv[])
 				write_apid_70 = 1;
 				break;
 			case 'a':
-				parse_apids(apids, optarg);
+				if (parse_apids(apids, optarg)) {
+					fprintf(stderr, "Invalid APIDs specified\n");
+					usage(argv[0]);
+					exit(1);
+				}
 				break;
 			case 'b':
 				fancy_output = 0;
@@ -137,7 +142,7 @@ main(int argc, char *argv[])
 		if (i < 0) i = strlen(input_fname);
 
 		if (i > MAX_FNAME_LEN - 4) {
-			fprintf(stderr, "Automatic filename too big, please specify a different filename\n");
+			fprintf(stderr, "Automatic filename too long, please specify a different filename\n");
 			usage(argv[0]);
 			return 1;
 		}
@@ -190,6 +195,8 @@ main(int argc, char *argv[])
 			ch[i] = &ch_instance[i];
 		}
 	}
+
+	/* Open APID 70 output file if necessary */
 	if (write_apid_70) {
 		sprintf(apid_70_fname, "%s.70", output_fname);
 		raw_channel_init(&ch_apid_70, apid_70_fname);
@@ -267,13 +274,7 @@ main(int argc, char *argv[])
 				/* Write .stat file if necessary */
 				if (write_stat) {
 					sprintf(stat_fname, "%s_%02d.stat", output_fname, ch[i]->apid);
-
-					if((stat_fd = fopen(stat_fname, "wb"))) {
-						fprintf(stat_fd, "%s\r\n", mpdu_time(_first_time));
-						fprintf(stat_fd, "%s\r\n", mpdu_time(_last_time - _first_time));
-						fprintf(stat_fd, "0\r\n");  /* Not sure what this is? */
-						fclose(stat_fd);
-					}
+					write_stat_and_close(fopen(stat_fname, "wb"));
 				}
 				printf("Done.\n");
 			}
@@ -295,13 +296,7 @@ main(int argc, char *argv[])
 
 			if (write_stat) {
 				sprintf(stat_fname, "%s.stat", output_fname);
-
-				if((stat_fd = fopen(stat_fname, "wb"))) {
-					fprintf(stat_fd, "%s\r\n", mpdu_time(_first_time));
-					fprintf(stat_fd, "%s\r\n", mpdu_time(_last_time - _first_time));
-					fprintf(stat_fd, "0\r\n");  /* Not sure what this is? */
-					fclose(stat_fd);
-				}
+				write_stat_and_close(fopen(stat_fname, "wb"));
 			}
 		}
 	}
@@ -388,14 +383,10 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 			break;
 
 		case 70:
-			/* AVHRR calibration data */
-			if (apid_70) {
-				raw_channel_write(apid_70, mpdu->id, sizeof(mpdu->id));
-				raw_channel_write(apid_70, mpdu->seq, sizeof(mpdu->seq));
-				raw_channel_write(apid_70, mpdu->len, sizeof(mpdu->len));
-				raw_channel_write(apid_70, (uint8_t*)&mpdu->data.time, sizeof(mpdu->data.time));
-				raw_channel_write(apid_70, mpdu->data.mcu.calib.data, sizeof(mpdu->data.mcu.calib.data));
-			}
+			/* AVHRR calibration data: directly write to file */
+			raw_channel_write(apid_70, (uint8_t*)mpdu,
+					 sizeof(mpdu->id) + sizeof(mpdu->seq) + sizeof(mpdu->len)
+				   + sizeof(mpdu->data.time) + sizeof(mpdu->data.mcu.calib.data));
 			break;
 
 		default:
@@ -405,17 +396,22 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 	if (first) first = 0;
 }
 
-static void
+static int
 parse_apids(int *apids, char *optarg)
 {
-	int red, green, blue;
+	int i, red, green, blue;
 
-	sscanf(optarg, "%d,%d,%d", &red, &green, &blue);
+	if (sscanf(optarg, "%d,%d,%d", &red, &green, &blue) != 3) return 1;
+
 	apids[0] = red;
 	apids[1] = green;
 	apids[2] = blue;
 
-	return;
+	for (i=0; i<3; i++) {
+		if (apids[i] < 64 || apids[i] > 69) return 1;
+	}
+
+	return 0;
 }
 
 static int
@@ -430,4 +426,15 @@ preferred_channel(int apid)
 		case 69: return 2;
 		default: return 0;
 	}
+}
+
+static void
+write_stat_and_close(FILE *fd)
+{
+	if (!fd) return;
+
+	fprintf(fd, "%s\r\n", mpdu_time(_first_time));
+	fprintf(fd, "%s\r\n", mpdu_time(_last_time - _first_time));
+	fprintf(fd, "0\r\n");  /* Not sure what this is? */
+	fclose(fd);
 }

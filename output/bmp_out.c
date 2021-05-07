@@ -91,7 +91,7 @@ bmp_write_rgb(void *_bmp, Channel *red, Channel *green, Channel *blue)
 	BmpOut *bmp = (BmpOut*)_bmp;
 	unsigned int i, col;
 	uint8_t *rgbrow;
-	int offset;
+	unsigned int offset;
 
 	if (!bmp || !bmp->ready) return 1;
 
