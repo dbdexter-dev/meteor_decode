@@ -136,19 +136,25 @@ main(int argc, char *argv[])
 
 	/* If no output filename is specified, make one up based on the input file */
 	if (!output_fname) {
-		/* Find where extension starts */
-		for (i = strlen(input_fname); i>=0 && input_fname[i] != '.'; i--);
-		if (i < 0) i = strlen(input_fname);
+		/* If the input is stdin, use a generic output filename */
+		if (!strcmp(input_fname, "-")) {
+			sprintf(auto_out_fname, "lrpt_out.bmp");
+		} else {
 
-		if (i > MAX_FNAME_LEN - 4) {
-			fprintf(stderr, "Automatic filename too long, please specify a different filename\n");
-			usage(argv[0]);
-			return 1;
+			/* Find where extension starts */
+			for (i = strlen(input_fname); i>=0 && input_fname[i] != '.'; i--);
+			if (i < 0) i = strlen(input_fname);
+
+			if (i > MAX_FNAME_LEN - 4) {
+				fprintf(stderr, "Automatic filename too long, please specify a different filename\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			/* Copy input file name without extension, add ".bmp" extension to it */
+			memcpy(auto_out_fname, input_fname, i);
+			sprintf(auto_out_fname + i, ".bmp");
 		}
-
-		/* Copy input file name without extension, add ".bmp" extension to it */
-		memcpy(auto_out_fname, input_fname, i);
-		sprintf(auto_out_fname + i, ".bmp");
 
 		output_fname = auto_out_fname;
 	}
@@ -169,7 +175,9 @@ main(int argc, char *argv[])
 	/* }}} */
 
 	/* Open input file */
-	if (!(_soft_file = fopen(input_fname, "rb"))) {
+	if (!strcmp(input_fname, "-")) {
+		_soft_file = stdin;
+	} else if (!(_soft_file = fopen(input_fname, "rb"))) {
 		fprintf(stderr, "Could not open input file\n");
 		return 1;
 	}
@@ -306,7 +314,7 @@ main(int argc, char *argv[])
 	for (i=0; i<NUM_CHANNELS; i++) {
 		channel_close(ch[i]);
 	}
-	fclose(_soft_file);
+	if (_soft_file != stdin) fclose(_soft_file);
 	if (write_apid_70) raw_channel_close(&ch_apid_70);
 
 	return 0;

@@ -12,6 +12,7 @@ Features:
 - Native BMP output
 - Optional PNG output (requires libpng)
 - Split channels output
+- Read samples from stdin (pass `-` in place of a filename)
 
 
 Build/install instructions
