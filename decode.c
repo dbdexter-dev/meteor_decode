@@ -22,6 +22,10 @@ static int _diffcoded;
 static int _interleaved;
 static enum { READ, PARSE_MPDU, VIT_SECOND } _state;
 
+#ifndef NDEBUG
+FILE *_vcdu;
+#endif
+
 
 void
 decode_init(int diffcoded, int interleaved)
@@ -35,6 +39,10 @@ decode_init(int diffcoded, int interleaved)
 	descramble_init();
 	rs_init();
 	mpdu_parser_init();
+
+#ifndef NDEBUG
+	_vcdu = fopen("/tmp/vcdu.data", "wb");
+#endif
 
 	_rs = 0;
 	_vit = 0;
@@ -54,12 +62,17 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 
 	uint8_t hard_cadu[CONV_CADU_LEN];
 	int errors;
+	int i;
 	enum phase rotation;
 
 	switch (_state) {
 		case READ:
 			/* Read a CADU worth of samples */
-			if (read_samples(read, soft_cadu, CADU_SOFT_LEN)) return EOF_REACHED;
+			for (i=0; i<CADU_SOFT_LEN; i+=CADU_SOFT_CHUNK) {
+				if (read_samples(read, soft_cadu+i, CADU_SOFT_CHUNK)) {
+					return EOF_REACHED;
+				}
+			}
 
 			/* Differentially decode if necessary */
 			if (_diffcoded) diff_decode(soft_cadu, CADU_SOFT_LEN);
@@ -84,6 +97,10 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 			descramble(&cadu);
 			errors = rs_fix(&cadu.data);
 			_rs = errors;
+#ifndef NDEBUG
+			fwrite(&cadu, sizeof(cadu), 1, _vcdu);
+			fflush(_vcdu);
+#endif
 
 			/* If RS reports failure, reinitialize the internal state of the
 			 * MPDU decoder and finish up the Viterbi decode process. */

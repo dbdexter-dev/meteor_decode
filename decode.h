@@ -5,6 +5,13 @@
 #include <stdlib.h>
 #include "protocol/mpdu.h"
 
+#define CADU_SOFT_CHUNK 2048    /* Bytes per read, affects interleaving. A higher
+                                   number means more stable synchronization, but
+                                   when the sync is off, a lot of bytes will be
+                                   lost. Lower number means better recovery from
+                                   phase inversions and such, but makes locking
+                                   on to a weak signal harder */
+
 typedef enum {
 	EOF_REACHED=0, NOT_READY, MPDU_READY, STATS_ONLY
 } DecoderState;
