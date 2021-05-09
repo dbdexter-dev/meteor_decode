@@ -14,7 +14,7 @@
 	POLY_TOP_BITS == 0x2 ? (metric)-2*(y) : (-metric))
 
 typedef struct {
-	int *restrict metric, *restrict next_metric;
+	int16_t *restrict metric, *restrict next_metric;
 	uint8_t prev[MEM_DEPTH][NUM_STATES/2];  /* State pairs always share their predecessors */
 } Viterbi;
 
@@ -24,8 +24,8 @@ static void update_metrics(int8_t x, int8_t y, int depth);
 static void backtrace(uint8_t *out, uint8_t state, int depth, int bitskip, int bitcount);
 
 static uint8_t _output_lut[NUM_STATES];
-static int _metric[NUM_STATES];
-static int _next_metric[NUM_STATES];
+static int16_t _metric[NUM_STATES];
+static int16_t _next_metric[NUM_STATES];
 static Viterbi _vit;
 static int _depth;
 
@@ -143,16 +143,16 @@ update_metrics(int8_t x, int8_t y, int depth)
 	const int local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
 	                              metric(x, y, 2), metric(x, y, 3)};
 	int state, ns0, ns1, ns2, ns3, prev01, prev23;
-	int metric0, metric1, metric2, metric3, best01, best23;
-	int lm0, lm1, lm2, lm3;
-	int *const metric = _vit.metric;
-	int *const next_metric = _vit.next_metric;
+	int16_t metric0, metric1, best01, best23;
+	int16_t lm0, lm1, lm2, lm3;
+	int16_t *const metric = _vit.metric;
+	int16_t *const next_metric = _vit.next_metric;
 	uint8_t *const prev_state = _vit.prev[depth];
 
 	for (state=0; state<NUM_STATES/2; state+=2) {
 		/* Compute the two possible next states */
 		ns0 = state;
-		ns1 = state | (1 << (K-1));
+		ns1 = state + (1 << (K-1));
 
 		/* Fetch the metrics of the two possible predecessors */
 		metric0 = metric[state<<1];
@@ -176,17 +176,15 @@ update_metrics(int8_t x, int8_t y, int depth)
 
 		/* ns2 and ns3 are very closely related to ns0 and ns1: they have the
 		 * same local metrics as ns1 and ns0 respectively. Computing them here
-		 * reduces memory accesses, and improves cache locality.
-		 * NOTE: this only works because the two most significant bits of the
-		 * two generator polynomials are different */
-		ns2 = ns0 | 1;
-		ns3 = ns1 | 1;
+		 * reduces memory accesses, and improves cache locality. */
+		ns2 = ns0 + 1;
+		ns3 = ns1 + 1;
 
-		metric2 = metric[(state<<1)+2];
-		metric3 = metric[(state<<1)+3];
+		metric0 = metric[(state<<1)+2];
+		metric1 = metric[(state<<1)+3];
 
-		best23 = BETTER_METRIC(metric2, metric3) ? metric2 : metric3;
-		prev23 = BETTER_METRIC(metric2, metric3) ? (state<<1) + 2 : (state<<1) + 3;
+		best23 = BETTER_METRIC(metric0, metric1) ? metric0 : metric1;
+		prev23 = BETTER_METRIC(metric0, metric1) ? (state<<1) + 2 : (state<<1) + 3;
 
 		lm2 = lm1;                          /* metric to ns2/3 given in=0 */
 		lm3 = TWIN_metric(lm2, x, y);       /* metric to ns2/3 given in=1 */

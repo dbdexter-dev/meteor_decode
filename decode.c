@@ -62,7 +62,7 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 
 	uint8_t hard_cadu[CONV_CADU_LEN];
 	int errors;
-	int i;
+	unsigned int i;
 	enum phase rotation;
 
 	switch (_state) {
