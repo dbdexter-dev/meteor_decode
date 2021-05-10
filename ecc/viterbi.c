@@ -1,3 +1,6 @@
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
 #include <assert.h>
 #include <string.h>
 #include "protocol/cadu.h"
@@ -8,7 +11,7 @@
 #define PREV_DEPTH(x) (((x) - 1 + LEN(_vit.prev)) % LEN(_vit.prev))
 #define BETTER_METRIC(x, y) ((x) > (y))    /* Higher metric is better */
 #define POLY_TOP_BITS ((G1 >> (K-1) & 1) << 1 | (G2 >> (K-1)))
-#define TWIN_metric(metric, x, y) (\
+#define TWIN_METRIC(metric, x, y) (\
 	POLY_TOP_BITS == 0x0 ? (metric) : \
 	POLY_TOP_BITS == 0x1 ? (metric)-2*(x) : \
 	POLY_TOP_BITS == 0x2 ? (metric)-2*(y) : (-metric))
@@ -142,57 +145,117 @@ update_metrics(int8_t x, int8_t y, int depth)
 {
 	const int local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
 	                              metric(x, y, 2), metric(x, y, 3)};
-	int state, ns0, ns1, ns2, ns3, prev01, prev23;
-	int16_t metric0, metric1, best01, best23;
-	int16_t lm0, lm1, lm2, lm3;
+	uint8_t state, ns0, ns1, ns2, ns3, prev01, prev23;
 	int16_t *const metric = _vit.metric;
 	int16_t *const next_metric = _vit.next_metric;
 	uint8_t *const prev_state = _vit.prev[depth];
 
+#ifdef __ARM_NEON
+	uint8_t start_states[] = {0, 2, 4, 6, 8, 10, 12, 14};
+	int16_t lms[8];
+
+	int16x8x2_t deint;
+	int16x8_t best, next_metrics_vec;
+	int16x8_t step_dup;
+
+	uint16x8_t rev_compare;
+	uint8x8_t states, prev;
+
+	/* Load initial states */
+	states = vld1_u8(start_states);
+
+	for (state=0; state<NUM_STATES/2; state+=8) {
+		/* Load metrics for 8 states and their twins, and compute the best ones */
+		deint = vld2q_s16(&metric[state << 1]);
+		best = BETTER_METRIC(1, 0) != 0
+			? vmaxq_s16(deint.val[0], deint.val[1])
+			: vminq_s16(deint.val[0], deint.val[1]);
+		rev_compare = BETTER_METRIC(1, 0) != 0
+			? vcltq_s16(deint.val[0], deint.val[1])
+			: vcgtq_s16(deint.val[0], deint.val[1]);
+
+		/* Collect previous states based on which ones had the best metric:
+		 * start_state[i] if best was in [0], else start_state[i] + 1 */
+		prev = vadd_u8(states, vand_u8(vmov_n_u8(1), vqmovn_u16(rev_compare)));
+		vst1_u8(&prev_state[state], prev);
+
+		/* Compute local path metrics */
+		lms[0] = local_metrics[_output_lut[(state<<1)]];      /* lm0/0 */
+		lms[1] = TWIN_METRIC(lms[0], x, y);                 /* lm2/0 */
+		lms[2] = local_metrics[_output_lut[(state<<1)+4]];    /* lm0/+2 */
+		lms[3] = TWIN_METRIC(lms[2], x, y);                 /* lm2 */
+		lms[4] = local_metrics[_output_lut[(state<<1)+8]];    /* lm0 */
+		lms[5] = TWIN_METRIC(lms[4], x, y);                 /* lm2 */
+		lms[6] = local_metrics[_output_lut[(state<<1)+12]];    /* lm0 */
+		lms[7] = TWIN_METRIC(lms[6], x, y);                 /* lm2 */
+
+		/* Updathe path metrics */
+		next_metrics_vec = vld1q_s16(lms);           /* Load #1: lm0, lm2, ... */
+		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
+		vst1q_s16(&next_metric[state], next_metrics_vec);
+
+		lms[0] = lms[1];
+		lms[1] = TWIN_METRIC(lms[0], x, y);
+		lms[2] = lms[3];
+		lms[3] = TWIN_METRIC(lms[2], x, y);
+		lms[4] = lms[5];
+		lms[5] = TWIN_METRIC(lms[4], x, y);
+		lms[6] = lms[7];
+		lms[7] = TWIN_METRIC(lms[6], x, y);
+
+		next_metrics_vec = vld1q_s16(lms);           /* Load #2: lm1, lm3, ... */
+		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
+		vst1q_s16(&next_metric[state + (1<<(K-1))], next_metrics_vec);
+
+		/* Go to the next state set */
+		states = vadd_u8(states, vmov_n_u8(2*LEN(start_states)));
+	}
+#else
+	int16_t metric0, metric1, metric2, metric3, best01, best23;
+	int16_t lm0, lm1, lm2, lm3;
+
 	for (state=0; state<NUM_STATES/2; state+=2) {
+		/* ns2 and ns3 are very closely related to ns0 and ns1: they have the
+		 * same local metrics as ns1 and ns0 respectively. Computing them here
+		 * reduces memory accesses, and improves cache locality. */
+
 		/* Compute the two possible next states */
 		ns0 = state;
 		ns1 = state + (1 << (K-1));
+		ns2 = ns0 + 1;
+		ns3 = ns1 + 1;
 
 		/* Fetch the metrics of the two possible predecessors */
 		metric0 = metric[state<<1];
 		metric1 = metric[(state<<1)+1];
+		metric2 = metric[(state<<1)+2];
+		metric3 = metric[(state<<1)+3];
+
 
 		/* Select the state that has the best metric between the two */
 		best01 = BETTER_METRIC(metric0, metric1) ? metric0 : metric1;
 		prev01 = BETTER_METRIC(metric0, metric1) ? (state<<1) : (state<<1) + 1;
+		best23 = BETTER_METRIC(metric2, metric3) ? metric2 : metric3;
+		prev23 = BETTER_METRIC(metric2, metric3) ? (state<<1) + 2 : (state<<1) + 3;
+
+		/* ns0 and ns1 have the same ancestor, just different metrics. Save it
+		 * only once for both. Same applies for ns2 and ns3 */
+		prev_state[ns0] = prev01;
+		prev_state[ns2] = prev23;
 
 		/* Compute the metrics of the ns0/ns1 transitions */
 		lm0 = local_metrics[_output_lut[state<<1]]; /* metric to ns0/1 given in=0 */
-		lm1 = TWIN_metric(lm0, x, y);               /* metric to ns0/1 given in=1 */
+		lm1 = TWIN_METRIC(lm0, x, y);               /* metric to ns0/1 given in=1 */
+		lm2 = lm1;                                  /* metric to ns2/3 given in=0 */
+		lm3 = TWIN_METRIC(lm2, x, y);               /* metric to ns2/3 given in=1 */
 
 		/* Metric of the next state = best predecessor metric + local metric */
 		next_metric[ns0] = best01 + lm0;
 		next_metric[ns1] = best01 + lm1;
-
-		/* ns0 and ns1 have the same ancestor, just different metrics. Save it
-		 * only once for both */
-		prev_state[ns0] = prev01;
-
-		/* ns2 and ns3 are very closely related to ns0 and ns1: they have the
-		 * same local metrics as ns1 and ns0 respectively. Computing them here
-		 * reduces memory accesses, and improves cache locality. */
-		ns2 = ns0 + 1;
-		ns3 = ns1 + 1;
-
-		metric0 = metric[(state<<1)+2];
-		metric1 = metric[(state<<1)+3];
-
-		best23 = BETTER_METRIC(metric0, metric1) ? metric0 : metric1;
-		prev23 = BETTER_METRIC(metric0, metric1) ? (state<<1) + 2 : (state<<1) + 3;
-
-		lm2 = lm1;                          /* metric to ns2/3 given in=0 */
-		lm3 = TWIN_metric(lm2, x, y);       /* metric to ns2/3 given in=1 */
-
 		next_metric[ns2] = best23 + lm2;
 		next_metric[ns3] = best23 + lm3;
-		prev_state[ns2] = prev23;
 	}
+#endif
 
 	/* Swap metric and next_metric for the next iteration */
 	_vit.metric = next_metric;
