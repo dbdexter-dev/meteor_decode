@@ -143,26 +143,31 @@ parity(uint32_t word)
 static void
 update_metrics(int8_t x, int8_t y, int depth)
 {
-	const int local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
-	                              metric(x, y, 2), metric(x, y, 3)};
+	const int16_t local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
+	                                  metric(x, y, 2), metric(x, y, 3)};
 	uint8_t state, ns0, ns1, ns2, ns3, prev01, prev23;
 	int16_t *const metric = _vit.metric;
 	int16_t *const next_metric = _vit.next_metric;
 	uint8_t *const prev_state = _vit.prev[depth];
 
-#ifdef __ARM_NEON
+#if defined(__ARM_NEON) && POLY_TOP_BITS == 0x3
 	uint8_t start_states[] = {0, 2, 4, 6, 8, 10, 12, 14};
-	int16_t lms[8];
+	int16_t lms[8], test_lms[8];
 
 	int16x8x2_t deint;
 	int16x8_t best, next_metrics_vec;
 	int16x8_t step_dup;
 
 	uint16x8_t rev_compare;
-	uint8x8_t states, prev;
+	uint8x8_t states, prev, cost_vec;
+	uint8x8_t local_metrics_lut;
+	uint8x8_t raw_metrics;
+	uint16x8_t umetrics;
+	int16x8_t metrics;
 
-	/* Load initial states */
+	/* Load initial states and local metrics */
 	states = vld1_u8(start_states);
+	local_metrics_lut = vreinterpret_u8_s16(vld1_s16(local_metrics));
 
 	for (state=0; state<NUM_STATES/2; state+=8) {
 		/* Load metrics for 8 states and their twins, and compute the best ones */
@@ -179,31 +184,29 @@ update_metrics(int8_t x, int8_t y, int depth)
 		prev = vadd_u8(states, vand_u8(vmov_n_u8(1), vqmovn_u16(rev_compare)));
 		vst1_u8(&prev_state[state], prev);
 
-		/* Compute local path metrics */
-		lms[0] = local_metrics[_output_lut[(state<<1)]];      /* lm0/0 */
-		lms[1] = TWIN_METRIC(lms[0], x, y);                 /* lm2/0 */
-		lms[2] = local_metrics[_output_lut[(state<<1)+4]];    /* lm0/+2 */
-		lms[3] = TWIN_METRIC(lms[2], x, y);                 /* lm2 */
-		lms[4] = local_metrics[_output_lut[(state<<1)+8]];    /* lm0 */
-		lms[5] = TWIN_METRIC(lms[4], x, y);                 /* lm2 */
-		lms[6] = local_metrics[_output_lut[(state<<1)+12]];    /* lm0 */
-		lms[7] = TWIN_METRIC(lms[6], x, y);                 /* lm2 */
+		/* Get the local metrics based on the output LUT. Can't make it simpler
+		 * than this because the only LUT ops are on 8 bit values, and the costs
+		 * are 16 bit wide :| */
+		cost_vec = vld1_u8(&_output_lut[state<<1]);
+		cost_vec = vshl_n_u8(cost_vec, 1);
+		raw_metrics = vtbl1_u8(local_metrics_lut, cost_vec);
+		umetrics = vmovl_u8(raw_metrics);
+
+		cost_vec = vadd_u8(cost_vec, vmov_n_u8(1));
+		raw_metrics = vtbl1_u8(local_metrics_lut, cost_vec);
+		umetrics = vaddq_u16(umetrics, vshll_n_u8(raw_metrics, 8));
+		metrics = vreinterpretq_s16_u16(umetrics);
+		metrics = vuzp1q_s16(metrics, metrics);
 
 		/* Updathe path metrics */
-		next_metrics_vec = vld1q_s16(lms);           /* Load #1: lm0, lm2, ... */
+		next_metrics_vec = metrics;           /* Load #1: lm0, lm2, ... */
 		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
 		vst1q_s16(&next_metric[state], next_metrics_vec);
 
-		lms[0] = lms[1];
-		lms[1] = TWIN_METRIC(lms[0], x, y);
-		lms[2] = lms[3];
-		lms[3] = TWIN_METRIC(lms[2], x, y);
-		lms[4] = lms[5];
-		lms[5] = TWIN_METRIC(lms[4], x, y);
-		lms[6] = lms[7];
-		lms[7] = TWIN_METRIC(lms[6], x, y);
+		/* Derive new metrics from old metrics */
+		metrics = vmvnq_s16(metrics);
 
-		next_metrics_vec = vld1q_s16(lms);           /* Load #2: lm1, lm3, ... */
+		next_metrics_vec = metrics;           /* Load #2: lm1, lm3, ... */
 		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
 		vst1q_s16(&next_metric[state + (1<<(K-1))], next_metrics_vec);
 
@@ -211,6 +214,9 @@ update_metrics(int8_t x, int8_t y, int depth)
 		states = vadd_u8(states, vmov_n_u8(2*LEN(start_states)));
 	}
 #else
+#if defined(__ARM_NEON) && POLY_TOP_BITS != 0x3
+#warn "NEON acceleration unimplemented for the given G1/G2, using default implementation"
+#endif
 	int16_t metric0, metric1, metric2, metric3, best01, best23;
 	int16_t lm0, lm1, lm2, lm3;
 
