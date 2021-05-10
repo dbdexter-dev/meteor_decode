@@ -14,7 +14,7 @@ endif()
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pipe -Wextra -Wimplicit-fallthrough")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=armv8-a -ftree-vectorize")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native -ftree-vectorize")
 set(COMMON_SOURCES
 	correlator/correlator.c correlator/correlator.h
 	correlator/autocorrelator.c correlator/autocorrelator.h
