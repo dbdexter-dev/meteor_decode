@@ -3,6 +3,9 @@
 #endif
 #include <assert.h>
 #include <string.h>
+#ifdef __ARM_FEATURE_SIMD32
+#include "math/arm_simd32.h"
+#endif
 #include "protocol/cadu.h"
 #include "utils.h"
 #include "viterbi.h"
@@ -148,7 +151,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 	int16_t *const next_metrics = _vit.next_metrics;
 	uint8_t *const prev_state = _vit.prev[depth];
 
-#if defined(__ARM_NEON) && POLY_TOP_BITS == 0x3
+#if defined(__ARM_NEON) && (POLY_TOP_BITS == 0x3 || POLY_TOP_BITS == 0x0)
 	const int8_t local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
 	                                  metric(x, y, 2), metric(x, y, 3)};
 	uint8_t start_states[] = {0, 2, 4, 6, 8, 10, 12, 14};
@@ -185,7 +188,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 		/* Get the local metrics based on the output LUT. */
 		cost_vec = vld1_s8(&_output_lut[state<<1]);
 		metrics_vec = vmovl_s8(vtbl1_s8(local_metrics_lut, cost_vec));
-		metrics_vec = vuzp1q_s16(metrics_vec, metrics_vec);
+		metrics_vec = vuzpq_s16(metrics_vec, metrics_vec).val[0];
 
 		/* Updathe path metrics */
 		next_metrics_vec = metrics_vec;           /* Load #1: lm0, lm2, ... */
@@ -193,11 +196,11 @@ update_metrics(int8_t x, int8_t y, int depth)
 		vst1q_s16(&next_metrics[state], next_metrics_vec);
 
 		/* Derive new metrics from old metrics. TODO implement for other G1,G2 values*/
-#if POLY_TOP_BITS == 0x0
-		/* metrics_vec unchanged */
-#elif POLY_TOP_BITS == 0x3
+		#if POLY_TOP_BITS == 0x0
+		metrics_vec = metrics_vec;
+		#elif POLY_TOP_BITS == 0x3
 		metrics_vec = vmvnq_s16(metrics_vec);
-#endif
+		#endif
 
 		next_metrics_vec = metrics_vec;           /* Load #2: lm1, lm3, ... */
 		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
@@ -206,11 +209,66 @@ update_metrics(int8_t x, int8_t y, int depth)
 		/* Go to the next state set */
 		states = vadd_u8(states, vmov_n_u8(2*LEN(start_states)));
 	}
+#elif __ARM_FEATURE_SIMD32 == 1
+	const int16_t local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
+	                                  metric(x, y, 2), metric(x, y, 3)};
+	int16_t metric0, metric1, metric2, metric3, best01, best23;
+	int16_t lm0, lm1, lm2, lm3;
+
+	uint32_t metric02, metric13, metric_tmp;
+	uint32_t best01_23, prev01_23, lms;
+	uint32_t state_vec;
+
+	for (state=0; state<NUM_STATES/2; state+=2) {
+		/* Compute the two possible next states */
+		ns0 = state;
+		ns1 = state + (1 << (K-1));
+		ns2 = ns0 + 1;
+		ns3 = ns1 + 1;
+
+		state_vec = (state << 1) << 16 | (state<<1) + 2;
+
+		/* Fetch the metrics of the two possible predecessors and their twins */
+		metric02 = *(uint32_t*)&metrics[state<<1];
+		metric13 = *(uint32_t*)&metrics[(state<<1)+2];
+
+		/* Combine them to prepare for some SIMD magic */
+		metric13 = __ror(metric13, 16);
+		metric_tmp = __pkhbt(metric02, metric13);
+		metric02 = __pkhbt(metric13, metric02);
+		metric13 = __ror(metric_tmp, 16);
+
+		/* Compute best metric and prev states */
+		__ssub16(metric02, metric13);
+		best01_23 = __sel(metric02, metric13);
+		prev01_23 = __ssub16(state_vec, __sel(~0, 0));  /* ~0 is immediate encodable, 0x00010001 is not */
+
+		prev_state[ns0] = prev01_23 & 0xFF;
+		prev_state[ns2] = prev01_23 >> 16;
+
+		/* Compute the metrics of the ns0/ns1/ns2/ns3 transitions */
+		lm0 = local_metrics[_output_lut[state<<1]]; /* metric to ns0/1 given in=0 */
+		lm1 = TWIN_METRIC(lm0, x, y);               /* metric to ns0/1 given in=1 */
+		lm2 = lm1;                                  /* metric to ns2/3 given in=0 */
+		lm3 = TWIN_METRIC(lm2, x, y);               /* metric to ns2/3 given in=1 */
+
+		/* Save new metrics */
+		lms = (lm0<<16) + lm2;
+		*(uint32_t*)&next_metrics[ns0] = __sadd16(best01_23, lms);
+		#if POLY_TOP_BITS == 0x0
+		lms = lms;
+		#elif POLY_TOP_BITS == 0x3
+		lms = __ror(lms, 16);
+		#else
+		lms = (lm1<<16) + lm3;
+		#endif
+		*(uint32_t*)&next_metrics[ns1] = __sadd16(best01_23, lms);
+	}
 #else
 
-#if defined(__ARM_NEON) && POLY_TOP_BITS != 0x3 && POLY_TOP_BITS != 0x0
-#warn "NEON acceleration unimplemented for the given G1/G2, using default implementation"
-#endif
+	#if defined(__ARM_NEON) && POLY_TOP_BITS != 0x3 && POLY_TOP_BITS != 0x0
+	#warn "NEON acceleration unimplemented for the given G1/G2, using default implementation"
+	#endif
 	const int local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
 	                              metric(x, y, 2), metric(x, y, 3)};
 	int16_t metric0, metric1, metric2, metric3, best01, best23;
