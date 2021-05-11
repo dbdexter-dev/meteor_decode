@@ -15,6 +15,18 @@ endif()
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pipe -Wextra -Wimplicit-fallthrough")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native -ftree-vectorize")
+
+# ARM architectures need -mfpu=auto in order to enable NEON when available,
+# but that option is unrecognized by x86 gcc (and possibly others): only
+# add it to the release flags when the compiler's target is arm
+# This is not a problem for arm64, as NEON support is mandatory for that arch
+execute_process(COMMAND "${CMAKE_C_COMPILER}" "-dumpmachine" COMMAND "grep" "arm" OUTPUT_QUIET RESULT_VARIABLE is_arm)
+if (is_arm EQUAL "0")
+	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -mfpu=auto")
+endif()
+
+
+
 set(COMMON_SOURCES
 	correlator/correlator.c correlator/correlator.h
 	correlator/autocorrelator.c correlator/autocorrelator.h
@@ -44,6 +56,7 @@ set(COMMON_INC_DIRS
 )
 
 
+# Enable PNG if requested at configure time AND libpng is present
 if (USE_PNG)
 	find_library(PNG_LIBRARY NAMES png libpng)
 	if (PNG_LIBRARY)
@@ -54,18 +67,16 @@ if (USE_PNG)
 	endif()
 endif()
 
+# Main executable target
 add_executable(meteor_decode main.c ${COMMON_SOURCES})
 target_include_directories(meteor_decode PUBLIC ${COMMON_INC_DIRS})
 
-add_library(lrpt STATIC ${COMMON_SOURCES})
-set_target_properties(lrpt PROPERTIES EXCLUDE_FROM_ALL 1)
-target_include_directories(lrpt PUBLIC ${COMMON_INC_DIRS})
-
+# Add links to PNG library if enabled
 if(USE_PNG AND PNG_LIBRARY)
 	target_link_libraries(meteor_decode PUBLIC png)
-	target_link_libraries(lrpt PUBLIC png)
 endif()
 
+# Install targets
 install(TARGETS meteor_decode DESTINATION bin)
 
 # uninstall target
