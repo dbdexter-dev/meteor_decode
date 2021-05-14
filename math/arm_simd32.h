@@ -38,12 +38,23 @@ __sel(uint32_t x, uint32_t y)
 
 __attribute__((always_inline))
 static inline uint32_t
-__pkhbt(uint32_t x, uint32_t y)
+__pkhbt(uint32_t x, uint32_t y, uint32_t shift)
 {
 	uint32_t result;
 
-	__asm volatile("pkhbt %0, %1, %2" : "=r"(result)
-			: "r" (x), "r" (y));
+	__asm volatile("pkhbt %0, %1, %2, lsl %3" : "=r"(result)
+			: "r" (x), "r" (y), "I" (shift));
+	return result;
+}
+
+__attribute__((always_inline))
+static inline uint32_t
+__pkhtb(uint32_t x, uint32_t y, uint32_t shift)
+{
+	uint32_t result;
+
+	__asm volatile("pkhtb %0, %1, %2, asr %3" : "=r"(result)
+			: "r" (x), "r" (y), "I" (shift));
 	return result;
 }
 
