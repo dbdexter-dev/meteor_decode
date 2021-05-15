@@ -201,7 +201,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 
 		/* Derive new metrics from old metrics. TODO implement for other G1,G2 values*/
 		metrics_vec = POLY_TOP_BITS == 0x00 ? metrics_vec
-		            : POLY_TOP_BITS == 0x03 ? -metrics_vec
+		            : POLY_TOP_BITS == 0x03 ? vnegq_s16(metrics_vec)
 		            : metrics_vec;
 
 		next_metrics_vec = metrics_vec;           /* Load #2: lm1, lm3, ... */
@@ -261,8 +261,8 @@ update_metrics(int8_t x, int8_t y, int depth)
 		lms = (lm0<<16) + lm2;
 		*(uint32_t*)&next_metrics[ns0] = __sadd16(best01_23, lms);
 		lms = POLY_TOP_BITS == 0x00 ? lms
-		    : POLY_TOP_BITS == 0x03 ? -lms
-		    : (lm1<<16) + lm3;
+		    : POLY_TOP_BITS == 0x03 ? (uint32_t)__ssub16(0, (uint32_t)lms)
+		    : (uint32_t)((lm1<<16) + lm3);
 		*(uint32_t*)&next_metrics[ns1] = __sadd16(best01_23, lms);
 	}
 #else
