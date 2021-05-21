@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <getopt.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include "channel.h"
@@ -24,10 +25,12 @@ static int preferred_channel(int apid);
 static int parse_apids(int *apids, char *optarg);
 static void process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70);
 static void write_stat_and_close(FILE *fd);
+static void sigint_handler(int val);
 
 static FILE *_soft_file;
 static int _quiet;
 static uint64_t _first_time, _last_time;
+static volatile int _running;
 
 static struct option longopts[] = {
 	{ "70",      0, NULL, '7' },
@@ -211,15 +214,18 @@ main(int argc, char *argv[])
 
 	/* Initialize decoder */
 	decode_init(diffcoded, interleaved);
+	/* Ctrl-C stops the decoding and writes the image decoded so far */
+	signal(SIGINT, sigint_handler);
 
 	/* Main processing loop {{{ */
-	while ((status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
+	_running = 1;
+	while (_running && (status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
 		if (!_quiet && (status == MPDU_READY || status == STATS_ONLY)) {
 			printf(fancy_output ? CLR : "\n");
 			percent = 100.0*(float)ftell(_soft_file)/file_len;
-			printf("%6.2f%% vit(avg): %4d rs(sum): %2d",
+			printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
 					percent,
 					decode_get_vit(), decode_get_rs());
 		}
@@ -341,7 +347,7 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 
 	/* Print status line */
 	if (!_quiet) {
-		printf("\tAPID %2d  seq: %d  %s",
+		printf("\tAPID: %-2d  seq: %d  %s",
 				apid, decode_get_vcdu_seq(), mpdu_time(time));
 	}
 
@@ -455,4 +461,10 @@ write_stat_and_close(FILE *fd)
 	fprintf(fd, "%s\r\n", mpdu_time(_last_time - _first_time));
 	fprintf(fd, "0\r\n");  /* Not sure what this is? */
 	fclose(fd);
+}
+
+static void
+sigint_handler(int val)
+{
+	_running = 0;
 }
