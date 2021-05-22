@@ -222,12 +222,19 @@ main(int argc, char *argv[])
 	while (_running && (status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
-		if (!_quiet && (status == MPDU_READY || status == STATS_ONLY)) {
-			printf(fancy_output ? CLR : "\n");
-			percent = 100.0*(float)ftell(_soft_file)/file_len;
-			printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
-					percent,
-					decode_get_vit(), decode_get_rs());
+		if (!_quiet) {
+			if (status == MPDU_READY) {
+				printf("\r");
+			} else if (status == STATS_ONLY) {
+				printf(fancy_output ? CLR : "\n");
+			}
+
+			if (status == STATS_ONLY || status == MPDU_READY) {
+				percent = 100.0*(float)ftell(_soft_file)/file_len;
+				printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
+						percent,
+						decode_get_vit(), decode_get_rs());
+			}
 		}
 
 		if (status == MPDU_READY) {

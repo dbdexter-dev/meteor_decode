@@ -13,6 +13,7 @@ Features:
 - Optional PNG output (requires libpng)
 - Split channels output
 - Read samples from stdin (pass `-` in place of a filename)
+- Ctrl-C at any point to write the image and exit (useful when decoding a stream of symbols)
 
 
 Build/install instructions
