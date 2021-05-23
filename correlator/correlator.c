@@ -62,8 +62,9 @@ correlate(enum phase *restrict best_phase, uint8_t *restrict hard_cadu, int len)
 		/* Fetch a byte from the CADU */
 		tmp = *hard_cadu++;
 
-		/* For each bit pair in the byte */
-		for (j=0; j<8; j+=2) {
+		/* For each bit in the byte (can't do pairs because OQPSK symbols may be
+		 * offset by one rather than two) */
+		for (j=0; j<8; j++) {
 
 			/* Take all possible rotations of the syncword into account */
 			for (phase=PHASE_0; phase<=PHASE_270; phase++) {
@@ -75,8 +76,8 @@ correlate(enum phase *restrict best_phase, uint8_t *restrict hard_cadu, int len)
 				}
 			}
 
-			/* Advance window by one pair */
-			window = (window << 2) | ((tmp >> (7-j-1)) & 0x3);
+			/* Advance window by one */
+			window = (window << 1) | ((tmp >> (7-j)) & 0x1);
 		}
 	}
 

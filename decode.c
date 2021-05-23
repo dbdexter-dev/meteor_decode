@@ -82,8 +82,10 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 			offset = correlate(&rotation, hard_cadu, CONV_CADU_LEN);
 
 			/* Read more samples to get a full CADU */
-			if (offset && read_samples(read, soft_cadu+CADU_SOFT_LEN, offset))
-				return EOF_REACHED;
+			if (offset) {
+				if (read_samples(read, soft_cadu+CADU_SOFT_LEN, offset)) return EOF_REACHED;
+				if (_diffcoded) diff_decode(soft_cadu+CADU_SOFT_LEN, offset);
+			}
 
 			/* Derotate */
 			soft_derotate(soft_cadu+offset, CADU_SOFT_LEN, rotation);
