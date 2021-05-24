@@ -23,12 +23,11 @@
 static int read_wrapper(int8_t *src, size_t len);
 static int preferred_channel(int apid);
 static int parse_apids(int *apids, char *optarg);
-static void process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70);
+static void process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70, int quiet);
 static void write_stat_and_close(FILE *fd);
 static void sigint_handler(int val);
 
 static FILE *_soft_file;
-static int _quiet;
 static uint64_t _first_time, _last_time;
 static volatile int _running;
 
@@ -55,15 +54,14 @@ main(int argc, char *argv[])
 	size_t file_len;
 	int mpdu_count=0, height;
 	float percent;
-	int diffcoded, interleaved, split_output, write_stat, write_apid_70, fancy_output;
 	int i, j, c, retval;
 	int duplicate;
+	uint32_t last_vcdu_seq;
 	Mpdu mpdu;
 	Channel ch_instance[NUM_CHANNELS], *ch[NUM_CHANNELS];
 	RawChannel ch_apid_70;
 	DecoderState status;
 	void *img_out;
-	int apids[NUM_CHANNELS];
 
 	/* Pointers to functions to initialize, write and close images (will point
 	 * to different functions based on the output format) */
@@ -73,15 +71,14 @@ main(int argc, char *argv[])
 	int (*img_finalize)(void *img);
 
 	/* Default parameters {{{ */
-	apids[0] = apids[1] = apids[2] = -1;
-
-	diffcoded = 0;
-	interleaved = 0;
-	fancy_output = 1;
-	split_output = 0;
-	write_stat = 0;
-	write_apid_70 = 0;
-	_quiet = 0;
+	int apids[NUM_CHANNELS] = {-1, -1, -1};
+	int diffcoded = 0;
+	int interleaved = 0;
+	int fancy_output = 1;
+	int split_output = 0;
+	int write_stat = 0;
+	int write_apid_70 = 0;
+	int quiet = 0;
 	/* }}} */
 	/* Parse command-line options {{{ */
 	optind = 0;
@@ -113,7 +110,7 @@ main(int argc, char *argv[])
 				split_output = 1;
 				break;
 			case 'q':
-				_quiet = 1;
+				quiet = 1;
 				break;
 			case 'h':
 				usage(argv[0]);
@@ -222,7 +219,7 @@ main(int argc, char *argv[])
 	while (_running && (status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
-		if (!_quiet) {
+		if (!quiet) {
 			if (status == MPDU_READY) {
 				printf("\r");
 			} else if (status == STATS_ONLY) {
@@ -234,12 +231,20 @@ main(int argc, char *argv[])
 				printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
 						percent,
 						decode_get_vit(), decode_get_rs());
+
+				/* If MPDU is ready, and it's the first MPDU of the VCDU, print
+				 * extended status information */
+				if (status == MPDU_READY && last_vcdu_seq != decode_get_vcdu_seq()) {
+					last_vcdu_seq = decode_get_vcdu_seq();
+					printf("\tAPID: %-2d seq: %d  %s",
+							mpdu_apid(&mpdu), last_vcdu_seq, mpdu_time(mpdu_raw_time(&mpdu)));
+				}
 			}
 		}
 
 		if (status == MPDU_READY) {
 			/* Process decoded MPDUs */
-			process_mpdu(&mpdu, ch, write_apid_70 ? &ch_apid_70 : NULL);
+			process_mpdu(&mpdu, ch, write_apid_70 ? &ch_apid_70 : NULL, quiet);
 			mpdu_count++;
 		}
 
@@ -250,7 +255,7 @@ main(int argc, char *argv[])
 	height = MAX(ch[0]->offset, MAX(ch[1]->offset, ch[2]->offset))
 	       / (MCU_PER_LINE*8);
 
-	if (!_quiet) printf(fancy_output ? CLR : "\n\n");
+	if (!quiet) printf(fancy_output ? CLR : "\n\n");
 	printf("MPDUs received: %d (%d lines)\n", mpdu_count, height);
 	printf("Onboard time elapsed: %s\n", mpdu_time(_last_time - _first_time));
 
@@ -340,7 +345,7 @@ read_wrapper(int8_t *dst, size_t len)
 }
 
 static void
-process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
+process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70, int quiet)
 {
 	static int first = 1;
 	unsigned int seq, apid, lines_lost;
@@ -352,18 +357,12 @@ process_mpdu(Mpdu *mpdu, Channel *ch[NUM_CHANNELS], RawChannel *apid_70)
 	apid = mpdu_apid(mpdu);
 	time = mpdu_raw_time(mpdu);
 
-	/* Print status line */
-	if (!_quiet) {
-		printf("\tAPID: %-2d  seq: %d  %s",
-				apid, decode_get_vcdu_seq(), mpdu_time(time));
-	}
-
 	if (first) _first_time = time;
 
 	/* When sat reboots, its time is highly unreliable, and can jump backwards
 	 * which makes things... weird. Handle that case by discarding the packets */
 	if (time < _first_time && _first_time - time < US_PER_DAY/2) {
-		printf(" Invalid timestamp");
+		if (!quiet) printf(" Invalid timestamp");
 		return;
 	}
 
