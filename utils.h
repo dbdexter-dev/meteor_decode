@@ -64,6 +64,14 @@ int      count_ones(uint64_t v);
 uint32_t read_bits(const uint8_t *src, int offset_bits, int bitcount);
 
 /**
+ * Generate an automatic filename based on the current date and time
+ *
+ * @param buf buffer to write the filename to
+ * @param len max length of the allocated buffer
+ */
+void gen_fname(char *buf, size_t len);
+
+/**
  * Print usage information
  *
  * @param execname name of the executable

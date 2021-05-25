@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "utils.h"
 
 #ifndef VERSION
@@ -125,4 +126,16 @@ read_bits(const uint8_t *src, int offset_bits, int bitcount)
 
 	ret >>= -bitcount;
 	return ret;
+}
+
+void
+gen_fname(char *buf, size_t len)
+{
+	time_t t;
+	struct tm *tm;
+
+	t = time(NULL);
+	tm = localtime(&t);
+
+	strftime(buf, len, "LRPT_%Y_%m_%d-%H_%M.bmp", tm);
 }

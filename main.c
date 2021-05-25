@@ -14,7 +14,7 @@
 #include "output/png_out.h"
 #endif
 
-#define CLR "\033[1K\r"
+#define CLR "\033[2K\r"
 
 #define NUM_CHANNELS 3
 #define MAX_FNAME_LEN 256
@@ -56,7 +56,7 @@ main(int argc, char *argv[])
 	float percent;
 	int i, j, c, retval;
 	int duplicate;
-	uint32_t last_vcdu_seq;
+	uint32_t last_vcdu_seq=0;
 	Mpdu mpdu;
 	Channel ch_instance[NUM_CHANNELS], *ch[NUM_CHANNELS];
 	RawChannel ch_apid_70;
@@ -138,7 +138,7 @@ main(int argc, char *argv[])
 	if (!output_fname) {
 		/* If the input is stdin, use a generic output filename */
 		if (!strcmp(input_fname, "-")) {
-			sprintf(auto_out_fname, "lrpt_out.bmp");
+			gen_fname(auto_out_fname, LEN(auto_out_fname));
 		} else {
 
 			/* Find where extension starts */
@@ -219,26 +219,29 @@ main(int argc, char *argv[])
 	while (_running && (status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
+		percent = 100.0*(float)ftell(_soft_file)/file_len;
+
 		if (!quiet) {
-			if (status == MPDU_READY) {
-				printf("\r");
-			} else if (status == STATS_ONLY) {
-				printf(fancy_output ? CLR : "\n");
-			}
-
-			if (status == STATS_ONLY || status == MPDU_READY) {
-				percent = 100.0*(float)ftell(_soft_file)/file_len;
-				printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
-						percent,
-						decode_get_vit(), decode_get_rs());
-
-				/* If MPDU is ready, and it's the first MPDU of the VCDU, print
-				 * extended status information */
-				if (status == MPDU_READY && last_vcdu_seq != decode_get_vcdu_seq()) {
-					last_vcdu_seq = decode_get_vcdu_seq();
-					printf("\tAPID: %-2d seq: %d  %s",
-							mpdu_apid(&mpdu), last_vcdu_seq, mpdu_time(mpdu_raw_time(&mpdu)));
-				}
+			switch (status) {
+				case STATS_ONLY:
+					printf(fancy_output ? CLR : "\n");
+					printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
+							percent,
+							decode_get_vit(), decode_get_rs());
+					break;
+				case MPDU_READY:
+					printf("\r");
+					printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
+							percent,
+							decode_get_vit(), decode_get_rs());
+					if (last_vcdu_seq != decode_get_vcdu_seq()) {
+						last_vcdu_seq = decode_get_vcdu_seq();
+						printf("\tAPID: %-2d seq: %d  %s",
+								mpdu_apid(&mpdu), last_vcdu_seq, mpdu_time(mpdu_raw_time(&mpdu)));
+					}
+					break;
+				default:
+					break;
 			}
 		}
 
