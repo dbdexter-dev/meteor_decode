@@ -7,7 +7,7 @@
 
 #define ROTATIONS 4
 
-static uint32_t hard_rotate_u32(uint32_t word, enum phase amount);
+static uint64_t hard_rotate_u64(uint64_t word, enum phase amount);
 static inline int correlate_u64(uint64_t x, uint64_t y);
 
 static uint64_t _syncwords[ROTATIONS];
@@ -18,8 +18,7 @@ correlator_init(uint64_t syncword)
 	int i;
 
 	for (i=0; i<ROTATIONS; i++) {
-		_syncwords[i] = (uint64_t)hard_rotate_u32(syncword >> 32, i) << 32 |
-		                          hard_rotate_u32(syncword & 0xFFFFFFFF, i);
+		_syncwords[i] = hard_rotate_u64(syncword, i);
 		_syncwords[i] = ((_syncwords[i] & 0x5555555555555555) << 1)
 		              | ((_syncwords[i] & 0xAAAAAAAAAAAAAAAA) >> 1);
 	}
@@ -86,23 +85,23 @@ correlate(enum phase *restrict best_phase, uint8_t *restrict hard_cadu, int len)
 
 
 /* Static functions {{{ */
-static uint32_t
-hard_rotate_u32(uint32_t word, enum phase amount)
+static uint64_t
+hard_rotate_u64(uint64_t word, enum phase amount)
 {
-	const uint32_t i = word & 0xaaaaaaaa;
-	const uint32_t q = word & 0x55555555;
+	const uint64_t i = word & 0xaaaaaaaaaaaaaaaa;
+	const uint64_t q = word & 0x5555555555555555;
 
 	switch (amount) {
 		case PHASE_0:
 			break;
 		case PHASE_90:
-			word = ((i ^ 0xaaaaaaaa) >> 1) | (q << 1);
+			word = ((i ^ 0xaaaaaaaaaaaaaaaa) >> 1) | (q << 1);
 			break;
 		case PHASE_180:
-			word = word ^ 0xffffffff;
+			word = word ^ 0xffffffffffffffff;
 			break;
 		case PHASE_270:
-			word = (i >> 1) | ((q ^ 0x55555555) << 1);
+			word = (i >> 1) | ((q ^ 0x5555555555555555) << 1);
 			break;
 		default:
 			break;
