@@ -184,7 +184,7 @@ main(int argc, char *argv[])
 
 	/* Get file length */
 	fseek(_soft_file, 0, SEEK_END);
-	file_len = ftell(_soft_file);
+	file_len = MAX(0, ftell(_soft_file));
 	fseek(_soft_file, 0, SEEK_SET);
 
 	/* Initialize channels, duping pointers when two APIDs are the same */
@@ -219,7 +219,7 @@ main(int argc, char *argv[])
 	while (_running && (status = decode_soft_cadu(&mpdu, &read_wrapper)) != EOF_REACHED) {
 		/* If the MPDU was parsed, or if the MPDU cannot be parsed (due to too
 		 * many errors, invalid fields etc.), print a new status line */
-		percent = 100.0*(float)ftell(_soft_file)/file_len;
+		percent = file_len ? 100.0*(float)ftell(_soft_file)/file_len : 0;
 
 		if (!quiet) {
 			switch (status) {
