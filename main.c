@@ -230,7 +230,7 @@ main(int argc, char *argv[])
 							decode_get_vit(), decode_get_rs());
 					break;
 				case MPDU_READY:
-					printf("\r");
+					printf(fancy_output ? "\r" : "\n");
 					printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
 							percent,
 							decode_get_vit(), decode_get_rs());
