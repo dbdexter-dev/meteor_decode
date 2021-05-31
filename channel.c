@@ -42,7 +42,7 @@ channel_append_strip(Channel *ch, const uint8_t (*strip)[8][8], unsigned int mcu
 	int mpdu_delta, mcu_delta;
 	int lines_lost, strips_lost;
 
-	/* Handle misalignments. Can occur after a satelliteb buffer overflow */
+	/* Handle misalignments. Can occur after a satellite buffer overflow */
 	mcu_seq -= (mcu_seq % MCU_PER_MPDU);
 
 	/* Align image to the given MPDU and MCU sequence numbers */

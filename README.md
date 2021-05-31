@@ -56,7 +56,7 @@ Usage
 meteor_decode [options] input.s
 	-7, --70               Dump APID70 data in a separate file
 	-a, --apid R,G,B       Specify APIDs to parse (default: autodetect)
-	-b, --batch            Batch mode (disable all non-printable characters)
+	-B, --batch            Batch mode (disable all non-printable characters)
 	-d, --diff             Perform differential decoding
 	-i, --int              Deinterleave samples (aka 80k mode)
 	-o, --output <file>    Output composite image to <file>

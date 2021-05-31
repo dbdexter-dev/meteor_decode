@@ -69,9 +69,7 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 		case READ:
 			/* Read a CADU worth of samples */
 			for (i=0; i<CADU_SOFT_LEN; i+=CADU_SOFT_CHUNK) {
-				if (read_samples(read, soft_cadu+i, CADU_SOFT_CHUNK)) {
-					return EOF_REACHED;
-				}
+				if (read_samples(read, soft_cadu+i, CADU_SOFT_CHUNK)) return EOF_REACHED;
 			}
 
 			/* Differentially decode if necessary */
@@ -82,7 +80,7 @@ decode_soft_cadu(Mpdu *dst, int (*read)(int8_t *dst, size_t len))
 			offset = correlate(&rotation, hard_cadu, CONV_CADU_LEN);
 
 			/* Read more samples to get a full CADU */
-			if (offset) {
+			if (offset > 0) {
 				if (read_samples(read, soft_cadu+CADU_SOFT_LEN, offset)) return EOF_REACHED;
 				if (_diffcoded) diff_decode(soft_cadu+CADU_SOFT_LEN, offset);
 			}

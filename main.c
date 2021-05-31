@@ -18,7 +18,7 @@
 
 #define NUM_CHANNELS 3
 #define MAX_FNAME_LEN 256
-#define SHORTOPTS "7a:bdhio:qstv"
+#define SHORTOPTS "7a:Bdhio:qstv"
 
 static int read_wrapper(int8_t *src, size_t len);
 static int preferred_channel(int apid);
@@ -34,7 +34,7 @@ static volatile int _running;
 static struct option longopts[] = {
 	{ "70",      0, NULL, '7' },
 	{ "apid",    1, NULL, 'a' },
-	{ "batch",   0, NULL, 'b' },
+	{ "batch",   0, NULL, 'B' },
 	{ "diff",    0, NULL, 'd' },
 	{ "help",    0, NULL, 'h' },
 	{ "int",     0, NULL, 'i' },
@@ -74,7 +74,7 @@ main(int argc, char *argv[])
 	int apids[NUM_CHANNELS] = {-1, -1, -1};
 	int diffcoded = 0;
 	int interleaved = 0;
-	int fancy_output = 1;
+	int batch = 0;
 	int split_output = 0;
 	int write_stat = 0;
 	int write_apid_70 = 0;
@@ -94,8 +94,8 @@ main(int argc, char *argv[])
 					exit(1);
 				}
 				break;
-			case 'b':
-				fancy_output = 0;
+			case 'B':
+				batch = 1;
 				break;
 			case 'o':
 				output_fname = optarg;
@@ -224,19 +224,22 @@ main(int argc, char *argv[])
 		if (!quiet) {
 			switch (status) {
 				case STATS_ONLY:
-					printf(fancy_output ? CLR : "\n");
+					printf(batch ? "\n" : CLR);
 					printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
 							percent,
 							decode_get_vit(), decode_get_rs());
 					break;
 				case MPDU_READY:
-					printf(fancy_output ? "\r" : "\n");
-					printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
-							percent,
-							decode_get_vit(), decode_get_rs());
+					/* Only print status information on the first MPDU found
+					 * inside of the VCDU */
 					if (last_vcdu_seq != decode_get_vcdu_seq()) {
 						last_vcdu_seq = decode_get_vcdu_seq();
-						printf("\tAPID: %-2d seq: %d  %s",
+
+						printf(batch ? "\n" : "\r");
+						printf("(%5.1f%%) vit(avg): %-4d  rs(sum): %-2d",
+								percent,
+								decode_get_vit(), decode_get_rs());
+						printf("\tAPID:  %-2d seq: %d  %s",
 								mpdu_apid(&mpdu), last_vcdu_seq, mpdu_time(mpdu_raw_time(&mpdu)));
 					}
 					break;
@@ -258,7 +261,7 @@ main(int argc, char *argv[])
 	height = MAX(ch[0]->offset, MAX(ch[1]->offset, ch[2]->offset))
 	       / (MCU_PER_LINE*8);
 
-	if (!quiet) printf(fancy_output ? CLR : "\n\n");
+	if (!quiet) printf(batch ? "\n\n" : CLR);
 	printf("MPDUs received: %d (%d lines)\n", mpdu_count, height);
 	printf("Onboard time elapsed: %s\n", mpdu_time(_last_time - _first_time));
 

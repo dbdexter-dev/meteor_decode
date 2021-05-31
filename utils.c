@@ -95,7 +95,7 @@ usage(char *execname)
 	fprintf(stderr,
 			"   -7, --70               Dump APID70 data in a separate file\n"
 	        "   -a, --apid R,G,B       Specify APIDs to parse (default: autodetect)\n"
-	        "   -b, --batch            Batch mode (disable all non-printable characters)\n"
+	        "   -B, --batch            Batch mode (disable all non-printable characters)\n"
 	        "   -d, --diff             Perform differential decoding\n"
 	        "   -i, --int              Deinterleave samples (aka 80k mode)\n"
 	        "   -o, --output <file>    Output composite image to <file>\n"
