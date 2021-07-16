@@ -10,8 +10,8 @@
 #include "utils.h"
 #include "viterbi.h"
 
-#define NEXT_DEPTH(x) (((x) + 1) % LEN(_vit.prev))
-#define PREV_DEPTH(x) (((x) - 1 + LEN(_vit.prev)) % LEN(_vit.prev))
+#define NEXT_DEPTH(x) (((x) + 1) % LEN(_prev))
+#define PREV_DEPTH(x) (((x) - 1 + LEN(_prev)) % LEN(_prev))
 #define BETTER_METRIC(x, y) ((x) > (y))    /* Higher metric is better */
 #define POLY_TOP_BITS ((G1 >> (K-1) & 1) << 1 | (G2 >> (K-1)))
 #define TWIN_METRIC(metric, x, y) (\
@@ -19,21 +19,19 @@
 	POLY_TOP_BITS == 0x1 ? (metric)-2*(x) : \
 	POLY_TOP_BITS == 0x2 ? (metric)-2*(y) : (-metric))
 
-typedef struct {
-	int16_t *restrict metrics, *restrict next_metrics;
-	uint8_t prev[MEM_DEPTH][NUM_STATES/2];  /* State pairs always share their predecessors */
-} Viterbi;
-
 static int  parity(uint32_t word);
 static int  metric(int x, int y, int coding);
 static void update_metrics(int8_t x, int8_t y, int depth);
 static void backtrace(uint8_t *out, uint8_t state, int depth, int bitskip, int bitcount);
 
-static uint8_t _output_lut[NUM_STATES];
-static int16_t _metric[NUM_STATES];
-static int16_t _next_metrics[NUM_STATES];
-static Viterbi _vit;
-static int _depth;
+/* Backend arrays accessed via pointers defined below */
+static int16_t _raw_metrics[NUM_STATES];
+static int16_t _raw_next_metrics[NUM_STATES];
+
+static uint8_t _output_lut[NUM_STATES];         /* Encoder output given a state */
+static int16_t *_metrics, *_next_metrics;       /* Pointers to current and previous metrics for each state */
+static uint8_t _prev[MEM_DEPTH][NUM_STATES/2];  /* Trellis diagram (pairs of states share the same predecessor) */
+static int _depth;                              /* Current memory depth in the trellis array */
 
 uint32_t
 conv_encode_u32(uint64_t *output, uint32_t state, uint32_t data)
@@ -65,6 +63,10 @@ viterbi_init()
 		next_state = (state >> 1) | (input << (K-1));
 		output = parity(next_state & G1) << 1 | parity(next_state & G2);
 
+		/* The ARM SIMD32 optimized algorithm stores the local metrics in a
+		 * single uint32_t, so the output computed here is used as a shift value
+		 * rather than an index in an array. For this reason, [0, 1, 2, 3]
+		 * indices become [0, 8, 16, 24] shifts */
 #if defined(__ARM_FEATURE_SIMD32) && !defined(__ARM_NEON)
 		_output_lut[state] = output << 3;
 #else
@@ -76,13 +78,13 @@ viterbi_init()
 	_depth = 0;
 
 	/* Initialize state metrics in the backtrack memory */
-	for (i=0; i<(int)LEN(_metric); i++) {
-		_metric[i] = 0;
+	for (i=0; i<NUM_STATES; i++) {
+		_raw_metrics[i] = 0;
 	}
 
 	/* Bind metric arrays to the Viterbi struct */
-	_vit.metrics = _metric;
-	_vit.next_metrics = _next_metrics;
+	_metrics = _raw_metrics;
+	_next_metrics = _raw_next_metrics;
 }
 
 
@@ -111,17 +113,17 @@ viterbi_decode(uint8_t *restrict out, int8_t *restrict soft_cadu, int bytecount)
 
 		/* Find the state with the best metric */
 		best_state = 0;
-		best_metric = _vit.metrics[0];
-		for (i=1; i<(int)LEN(_metric); i++) {
-			if (BETTER_METRIC(_vit.metrics[i], best_metric)) {
-				best_metric = _vit.metrics[i];
+		best_metric = _metrics[0];
+		for (i=1; i<NUM_STATES; i++) {
+			if (BETTER_METRIC(_metrics[i], best_metric)) {
+				best_metric = _metrics[i];
 				best_state = i;
 			}
 		}
 
 		/* Resize metrics to prevent overflows */
-		for (i=0; i<(int)LEN(_metric); i++) {
-			_vit.metrics[i] -= best_metric;
+		for (i=0; i<NUM_STATES; i++) {
+			_metrics[i] -= best_metric;
 		}
 
 		/* Update total metric */
@@ -150,9 +152,9 @@ parity(uint32_t word)
 static void
 update_metrics(int8_t x, int8_t y, int depth)
 {
-	int16_t *const metrics = _vit.metrics;
-	int16_t *const next_metrics = _vit.next_metrics;
-	uint8_t *const prev_state = _vit.prev[depth];
+	int16_t *const metrics = _metrics;
+	int16_t *const next_metrics = _next_metrics;
+	uint8_t *const prev_state = _prev[depth];
 	uint8_t state;
 
 #if defined(__ARM_NEON) && (POLY_TOP_BITS == 0x3 || POLY_TOP_BITS == 0x0)
@@ -194,7 +196,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 		metrics_vec = vmovl_s8(vtbl1_s8(local_metrics_lut, cost_vec));
 		metrics_vec = vuzpq_s16(metrics_vec, metrics_vec).val[0];
 
-		/* Updathe path metrics */
+		/* Update path metrics */
 		next_metrics_vec = metrics_vec;           /* Load #1: lm0, lm2, ... */
 		next_metrics_vec = vaddq_s16(next_metrics_vec, best);
 		vst1q_s16(&next_metrics[state], next_metrics_vec);
@@ -211,7 +213,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 		/* Go to the next state set */
 		states = vadd_u8(states, vmov_n_u8(2*LEN(start_states)));
 	}
-#elif __ARM_FEATURE_SIMD32 == 1
+#elif __ARM_FEATURE_SIMD32 == 1 && (POLY_TOP_BITS == 0x3 || POLY_TOP_BITS == 0x0)
 	const uint32_t local_metrics = (uint8_t)metric(x, y, 0)
 	                             | ((uint8_t)metric(x, y, 1) << 8)
 	                             | ((uint8_t)metric(x, y, 2) << 16)
@@ -245,8 +247,12 @@ update_metrics(int8_t x, int8_t y, int depth)
 
 		/* Compute best metric and prev states */
 		__ssub16(metric02, metric13);
-		best01_23 = __sel(metric02, metric13);
-		prev01_23 = __ssub16(state_vec, __sel(0, ~0));  /* ~0 is immediate encodable, 0x00010001 is not */
+		best01_23 = BETTER_METRIC(1, 0) != 0
+			? __sel(metric02, metric13)
+			: __sel(metric13, metric02);
+		prev01_23 = BETTER_METRIC(1, 0) != 0
+			? __ssub16(state_vec, __sel(0, ~0))
+			: __ssub16(state_vec, __sel(~0, 0));  /* ~0 is immediate encodable, 0x00010001 is not */
 
 		prev_state[ns0] = prev01_23 & 0xFF;
 		prev_state[ns2] = prev01_23 >> 16;
@@ -267,7 +273,7 @@ update_metrics(int8_t x, int8_t y, int depth)
 	}
 #else
 
-	#if defined(__ARM_NEON) && POLY_TOP_BITS != 0x3 && POLY_TOP_BITS != 0x0
+	#if defined(__ARM_NEON) && !(POLY_TOP_BITS == 0x3 || POLY_TOP_BITS == 0x0)
 	#warn "NEON acceleration unimplemented for the given G1/G2, using default implementation"
 	#endif
 	const int local_metrics[4] = {metric(x, y, 0), metric(x, y, 1),
@@ -320,8 +326,8 @@ update_metrics(int8_t x, int8_t y, int depth)
 #endif
 
 	/* Swap metric and next_metrics for the next iteration */
-	_vit.metrics = next_metrics;
-	_vit.next_metrics = metrics;
+	_metrics = next_metrics;
+	_next_metrics = metrics;
 }
 
 static void
@@ -334,7 +340,7 @@ backtrace(uint8_t *out, uint8_t state, int depth, int bitskip, int bitcount)
 
 	/* Backtrace without writing bits */
 	for (; bitskip > 0; bitskip--) {
-		state = _vit.prev[depth][state & ~(1<<(K-1))];
+		state = _prev[depth][state & ~(1<<(K-1))];
 		depth = PREV_DEPTH(depth);
 	}
 
@@ -348,7 +354,7 @@ backtrace(uint8_t *out, uint8_t state, int depth, int bitskip, int bitcount)
 		/* Process each byte separately */
 		for (i=0; i<8; i++) {
 			tmp |= (state >> (K-1)) << i;
-			state = _vit.prev[depth][state & ~(1<<(K-1))];
+			state = _prev[depth][state & ~(1<<(K-1))];
 			depth = PREV_DEPTH(depth);
 		}
 
