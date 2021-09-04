@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 option(USE_PNG "Enable PNG output" ON)
 
 project(meteor_decode
-	VERSION 1.1.1
+	VERSION 1.1.2
 	DESCRIPTION "LRPT decoder"
 	LANGUAGES C)
 add_definitions(-DVERSION="${CMAKE_PROJECT_VERSION}")
