@@ -10,4 +10,4 @@ int bmp_write_rgb(void *bmp, Channel *red, Channel *green, Channel *blue);
 int bmp_write_mono(void *bmp, Channel *ch);
 int bmp_finalize(void *bmp);
 
-#endif
+#endif /* bmp_out_h */

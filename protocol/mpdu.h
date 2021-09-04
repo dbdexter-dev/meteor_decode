@@ -43,4 +43,4 @@ inline uint16_t mpdu_us(Mpdu *m) { return m->data.time.us[0] << 8 | m->data.time
 inline uint64_t mpdu_raw_time(Mpdu *m) { return (uint64_t)mpdu_day(m)*86400LL*1000LL*1000LL + (uint64_t)mpdu_ms(m)*1000L + (uint64_t)mpdu_us(m); }
 
 char *mpdu_time(uint64_t us);
-#endif
+#endif /* mpdu_h */

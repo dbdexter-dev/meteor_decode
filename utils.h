@@ -83,4 +83,4 @@ void usage(char *execname);
  */
 void version();
 
-#endif
+#endif /* utils_h */

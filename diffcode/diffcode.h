@@ -6,4 +6,4 @@
 
 void diff_decode(int8_t *soft_cadu, size_t len);
 
-#endif
+#endif /* diffcode_h */

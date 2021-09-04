@@ -29,4 +29,4 @@ inline uint8_t avhrr_ac_idx(AVHRR *a) { return a->scan_hdr[1] & 0xF; }
 inline uint8_t avhrr_dc_idx(AVHRR *a) { return a->scan_hdr[1] >> 4; }
 inline uint8_t avhrr_q(AVHRR *a) { return a->segment_hdr[2]; }
 
-#endif
+#endif /* mcu_h */

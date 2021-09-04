@@ -1,10 +1,10 @@
 #include <stdint.h>
 #include "raw_channel.h"
 
-void
+int
 raw_channel_init(RawChannel *ch, const char *fname)
 {
-	ch->fd = fopen(fname, "wb");
+	return !(ch->fd = fopen(fname, "wb"));
 }
 
 void

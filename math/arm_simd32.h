@@ -69,4 +69,4 @@ __ror(uint32_t x, int amount)
 	return result;
 }
 
-#endif
+#endif /* arm_simd32_h */

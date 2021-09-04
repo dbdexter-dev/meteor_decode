@@ -49,4 +49,4 @@ int decode_get_rs();
 int decode_get_vit();
 uint32_t decode_get_vcdu_seq();
 
-#endif
+#endif /* decode_h */

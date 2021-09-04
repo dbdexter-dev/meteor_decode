@@ -52,4 +52,4 @@ void     viterbi_init();
  */
 int     viterbi_decode(uint8_t *out, int8_t *in, int bytecount);
 
-#endif
+#endif /* viterbi_h */

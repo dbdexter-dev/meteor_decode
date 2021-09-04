@@ -6,4 +6,4 @@
 
 int avhrr_decode(uint8_t (*dst)[8][8], AVHRR *a, int len);
 
-#endif
+#endif /* mcu_parser_h */

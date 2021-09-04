@@ -42,4 +42,4 @@ void channel_close(Channel *ch);
  */
 void channel_append_strip(Channel *ch, const uint8_t (*strip)[8][8], unsigned int mcu_seq, unsigned int mpdu_seq);
 
-#endif
+#endif /* channel_h */

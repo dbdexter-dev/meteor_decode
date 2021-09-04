@@ -12,4 +12,4 @@ int png_write_rgb(void *png, Channel *red, Channel *green, Channel *blue);
 int png_write_mono(void *png, Channel *ch);
 int png_finalize(void *png);
 
-#endif
+#endif /* png_out_h */

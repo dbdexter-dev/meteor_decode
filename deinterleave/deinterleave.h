@@ -1,6 +1,9 @@
 #ifndef deinterleave_h
 #define deinterleave_h
 
+#include <stdint.h>
+#include <stdlib.h>
+
 #define INTER_MARKER 0x27
 #define INTER_MARKER_STRIDE 80
 #define INTER_MARKER_INTERSAMPS (INTER_MARKER_STRIDE - 8)
@@ -9,9 +12,6 @@
 #define INTER_BRANCH_DELAY 2048
 
 #define INTER_SIZE(x) (x*10/9+8)
-
-#include <stdint.h>
-#include <stdlib.h>
 
 /**
  * Deinterleave a set of soft samples, and extract a corresponding number of
@@ -39,4 +39,4 @@ size_t deinterleave_num_samples(size_t output_count);
  */
 int    deinterleave_expected_sync_offset();
 
-#endif
+#endif /* deinterleave_h */

@@ -18,4 +18,4 @@ void descramble_init();
  */
 void descramble(Cadu *c);
 
-#endif
+#endif /* descramble_h */

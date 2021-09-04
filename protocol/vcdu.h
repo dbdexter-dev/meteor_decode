@@ -37,4 +37,5 @@ inline uint16_t vcdu_header_ptr(Vcdu *c) { return (c->mpdu_hdr[0] & 0x7) << 8 | 
 inline uint8_t vcdu_header_present(Vcdu *c) { return !vcdu_mpdu_spare(c) && vcdu_header_ptr(c) != 0x7FF; }
 inline uint8_t* vcdu_data(Vcdu *c) { return c->mpdu_data; }
 inline uint8_t* vcdu_checksum(Vcdu *c) { return c->checksum; }
-#endif
+
+#endif /* vcdu_h */

@@ -29,4 +29,4 @@ void rs_init();
  */
 int rs_fix(Vcdu *c);
 
-#endif
+#endif /* rs_h */

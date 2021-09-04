@@ -17,4 +17,4 @@ typedef struct {
 	Vcdu data;
 } __attribute__((packed)) Cadu;
 
-#endif
+#endif /* cadu_h */

@@ -29,4 +29,4 @@ void mpdu_parser_init();
  */
 ParserStatus mpdu_reconstruct(Mpdu *dst, Vcdu *src);
 
-#endif
+#endif /* mpdu_parser_h */

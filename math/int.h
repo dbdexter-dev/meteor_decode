@@ -11,4 +11,4 @@
  */
 unsigned int int_sqrt(unsigned int x);
 
-#endif
+#endif /* math_int_h */

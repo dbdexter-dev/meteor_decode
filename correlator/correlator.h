@@ -26,6 +26,6 @@ void correlator_init(uint64_t syncword);
  * @param len length of the byte buffer, in bytes
  * @return the offset with the highest correlation to the syncword
  */
-int  correlate(enum phase *restrict best_phase, uint8_t *restrict hard_cadu, int len);
+int  correlate(enum phase *best_phase, uint8_t *hard_cadu, int len);
 
-#endif
+#endif /* correlator_h */
