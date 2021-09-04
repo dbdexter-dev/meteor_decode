@@ -18,7 +18,7 @@
 
 #define NUM_CHANNELS 3
 #define MAX_FNAME_LEN 256
-#define SHORTOPTS "7a:Bdhio:qstv"
+#define SHORTOPTS "7a:bBdhio:qstv"
 
 static int read_wrapper(int8_t *src, size_t len);
 static int preferred_channel(int apid);
@@ -35,6 +35,7 @@ static struct option longopts[] = {
 	{ "70",      0, NULL, '7' },
 	{ "apid",    1, NULL, 'a' },
 	{ "batch",   0, NULL, 'B' },
+	{ "batch-alt",0,NULL, 'b' },
 	{ "diff",    0, NULL, 'd' },
 	{ "help",    0, NULL, 'h' },
 	{ "int",     0, NULL, 'i' },
@@ -94,6 +95,7 @@ main(int argc, char *argv[])
 					exit(1);
 				}
 				break;
+			case 'b':
 			case 'B':
 				batch = 1;
 				break;

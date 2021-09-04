@@ -26,28 +26,40 @@ if (is_arm EQUAL "0")
 endif()
 
 
-
-set(COMMON_SOURCES
+set(LIBRARY_SOURCES
 	correlator/correlator.c correlator/correlator.h
 	correlator/autocorrelator.c correlator/autocorrelator.h
+
 	deinterleave/deinterleave.c deinterleave/deinterleave.h
+
 	diffcode/diffcode.c diffcode/diffcode.h
+
 	ecc/descramble.c ecc/descramble.h
 	ecc/rs.c ecc/rs.h
 	ecc/viterbi.c ecc/viterbi.h
+
 	jpeg/huffman.c jpeg/huffman.h
 	jpeg/jpeg.c jpeg/jpeg.h
+
 	math/int.c math/int.h
+	math/arm_simd32.h
+
 	parser/mcu_parser.c parser/mcu_parser.h
 	parser/mpdu_parser.c parser/mpdu_parser.h
+
 	protocol/mcu.c protocol/mcu.h
 	protocol/mpdu.c protocol/mpdu.h
 	protocol/vcdu.c protocol/vcdu.h
-	output/bmp_out.c output/bmp_out.h
+
+
 	channel.c channel.h
 	raw_channel.c raw_channel.h
 	decode.c decode.h
 	utils.c utils.h
+)
+
+set(EXEC_SOURCES
+	output/bmp_out.c output/bmp_out.h
 )
 
 set(COMMON_INC_DIRS
@@ -61,19 +73,28 @@ if (USE_PNG)
 	find_library(PNG_LIBRARY NAMES png libpng)
 	if (PNG_LIBRARY)
 		add_definitions(-DUSE_PNG)
-		set(COMMON_SOURCES ${COMMON_SOURCES} output/png_out.c output/png_out.h)
+		set(EXEC_SOURCES ${EXEC_SOURCES} output/png_out.c output/png_out.h)
 	else()
 		message(WARNING "libpng not found, PNG output will be unavailable")
 	endif()
 endif()
 
+# Main library target
+add_library(lrpt_static STATIC ${LIBRARY_SOURCES})
+target_include_directories(lrpt_static PRIVATE ${COMMON_INC_DIRS})
+
+# Shared library target
+add_library(lrpt SHARED ${LIBRARY_SOURCES})
+target_include_directories(lrpt PRIVATE ${COMMON_INC_DIRS})
+
 # Main executable target
-add_executable(meteor_decode main.c ${COMMON_SOURCES})
-target_include_directories(meteor_decode PUBLIC ${COMMON_INC_DIRS})
+add_executable(meteor_decode main.c ${EXEC_SOURCES})
+target_include_directories(meteor_decode PRIVATE ${COMMON_INC_DIRS})
+target_link_libraries(meteor_decode PRIVATE lrpt_static)
 
 # Add links to PNG library if enabled
 if(USE_PNG AND PNG_LIBRARY)
-	target_link_libraries(meteor_decode PUBLIC png)
+	target_link_libraries(meteor_decode PRIVATE png)
 endif()
 
 # Install targets
